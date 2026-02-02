@@ -28,8 +28,8 @@ export const spacing = {
 export const headerStyles = {
   container: 'border-b border-border bg-card',
   wrapper: 'container mx-auto px-4 py-4 md:px-6 md:py-5 lg:px-8 lg:py-6',
-  title: 'text-xl md:text-2xl lg:text-3xl font-bold text-foreground',
-  subtitle: 'text-xs md:text-sm lg:text-base text-muted-foreground mt-1 md:mt-2',
+  title: 'text-base md:text-lg lg:text-xl font-bold text-foreground',
+  subtitle: 'text-xs text-muted-foreground mt-1 md:mt-2',
 };
 
 // Main Content Styles
@@ -42,7 +42,7 @@ export const mainContentStyles = {
 export const cardStyles = {
   base: 'rounded-lg border border-border bg-card shadow-sm',
   header: 'border-b border-border bg-slate-100 dark:bg-slate-800 px-3 md:px-4 py-2 md:py-3 rounded-t-lg',
-  title: 'text-base md:text-lg font-semibold text-foreground',
+  title: 'text-xs font-semibold text-foreground',
   content: 'flex flex-col gap-2 p-2 md:p-3 lg:p-4',
   subcard: 'rounded-lg border border-border bg-card p-2 md:p-3 shadow-sm',
   padding: 'p-3 md:p-4 lg:p-5',
@@ -53,7 +53,7 @@ export const inputSectionStyles = {
   container: 'rounded-lg border border-border bg-slate-50 dark:bg-slate-900',
   header: 'border-b border-border bg-slate-100 dark:bg-slate-800 px-3 md:px-4 py-2 md:py-3 rounded-t-lg',
   headerContent: 'flex items-center justify-between',
-  headerTitle: 'text-base md:text-lg font-semibold text-foreground',
+  headerTitle: 'text-xs md:text-sm font-semibold text-foreground',
   icon: 'h-4 md:h-5 w-4 md:w-5 cursor-help text-muted-foreground hover:text-foreground transition-colors',
   content: 'flex flex-col gap-2 p-2 md:p-3',
 };
@@ -82,8 +82,8 @@ export const gridLayoutStyles = {
 // Summary Card Styles
 export const summaryCardStyles = {
   container: 'rounded-lg bg-muted p-2 md:p-3 lg:p-4',
-  label: 'text-xs md:text-sm text-muted-foreground font-medium',
-  value: 'mt-2 font-mono text-xs md:text-sm lg:text-base text-foreground',
+  label: 'text-xs text-muted-foreground font-medium',
+  value: 'mt-2 font-mono text-xs text-foreground',
 };
 
 // Image Styles
@@ -95,16 +95,16 @@ export const imageStyles = {
 // Placeholder/Empty State Styles
 export const emptyStateStyles = {
   container: 'flex min-h-72 md:min-h-80 lg:min-h-96 items-center justify-center rounded-lg bg-muted',
-  text: 'text-sm md:text-base text-muted-foreground text-center px-4',
+  text: 'text-xs text-muted-foreground text-center px-4',
 };
 
 // Tooltip Styles
 export const tooltipStyles = {
   trigger: 'h-4 md:h-5 w-4 md:w-5 cursor-help text-muted-foreground hover:text-foreground transition-colors',
-  content: 'max-w-xs md:max-w-sm text-xs md:text-sm',
+  content: 'max-w-xs md:max-w-sm text-xs',
   section: 'space-y-2',
-  sectionTitle: 'font-semibold text-xs md:text-sm',
-  sectionText: 'text-xs md:text-sm',
+  sectionTitle: 'font-semibold text-xs',
+  sectionText: 'text-xs',
 };
 
 // Flex Utilities
@@ -130,79 +130,52 @@ export const classNameBuilder = {
     `gap-${sm} md:gap-${md} lg:gap-${lg}`,
 };
 
-// Seção de Entrada - Layout responsivo completo
-export const inputSectionLayoutStyles = {
-  container: inputSectionStyles.container,
-  header: `${inputSectionStyles.header}`,
-  headerContent: inputSectionStyles.headerContent,
-  headerTitle: inputSectionStyles.headerTitle,
-  contentWrapper: inputSectionStyles.content,
-  geometryGrid: gridLayoutStyles.geometryGrid,
-  materialEffortGrid: `${gridLayoutStyles.materialEffortGrid} grid-cols-1 lg:grid-cols-3`,
-  singleCardGrid: 'grid grid-cols-1 gap-2 md:gap-3',
-
-};
-
-// Conteúdo Principal - Layout responsivo completo
-export const contentSectionLayoutStyles = {
-  wrapper: 'flex flex-col gap-3 md:gap-4 lg:gap-6',
-  summaryCard: cardStyles.base,
-  summaryContent: `${cardStyles.padding}`,
-  summaryTitle: `${cardStyles.title}`,
-  summaryGrid: gridLayoutStyles.summaryGrid,
-  resultsCard: cardStyles.base,
-  resultsContent: `${cardStyles.padding}`,
-  resultsTitle: `${cardStyles.title}`,
-  resultsPlaceholder: emptyStateStyles.container,
-  resultsPlaceholderText: emptyStateStyles.text,
-};
-
 // Font Sizes
 export const fontSizes = {
   // Para tags semânticas
-  h1: 'text-3xl',
-  h2: 'text-2xl',
-  h3: 'text-xl',
-  p: 'text-base',
+  h1: 'text-xl',
+  h2: 'text-lg',
+  h3: 'text-base',
+  p: 'text-xs',
 
   // Extra small - Geralmente para labels, hints
   xs: 'text-xs',
   // Small - Para subtítulos, labels secundários
-  sm: 'text-sm',
+  sm: 'text-xs',
   // Base - Tamanho padrão para texto do corpo
-  base: 'text-base',
+  base: 'text-xs',
   // Large - Para títulos de seções
-  lg: 'text-lg',
+  lg: 'text-sm',
   // Extra large - Para títulos principais
-  xl: 'text-xl',
+  xl: 'text-base',
   // 2XL - Para títulos grandes
-  '2xl': 'text-2xl',
+  '2xl': 'text-lg',
   // 3XL - Para títulos de página
-  '3xl': 'text-3xl',
+  '3xl': 'text-xl',
 };
 
 // Font Sizes Responsivos (sm, md, lg breakpoints)
 export const fontSizesResponsive = {
   // Para tags semânticas
-  h1: 'text-2xl md:text-3xl lg:text-4xl',
-  h2: 'text-xl md:text-2xl lg:text-3xl',
-  h3: 'text-lg md:text-xl lg:text-2xl',
-  p: 'text-base md:text-lg',
+  h1: 'text-lg md:text-xl lg:text-2xl',
+  h2: 'text-base md:text-lg lg:text-xl',
+  h3: 'text-sm md:text-base lg:text-lg',
+  p: 'text-xs md:text-sm',
 
   // Para subtítulos
-  subtitle: 'text-xs md:text-sm lg:text-base',
+  subtitle: 'text-xs',
   // Para títulos de cards
-  cardTitle: 'text-base md:text-lg',
+  cardTitle: 'text-xs md:text-sm',
   // Para títulos de seções
-  sectionTitle: 'text-lg md:text-xl',
+  sectionTitle: 'text-sm md:text-base',
   // Para títulos de página
-  pageTitle: 'text-xl md:text-2xl lg:text-3xl',
+  pageTitle: 'text-base md:text-lg lg:text-xl',
   // Para texto do corpo
-  body: 'text-sm md:text-base',
+  body: 'text-xs',
   // Para labels de inputs
-  label: 'text-xs md:text-sm',
+  label: 'text-xs',
   // Para valores em destaque
-  highlight: 'text-base md:text-lg',
+  highlight: 'text-sm md:text-base',
   // Para informações pequenas
-  small: 'text-xs md:text-xs lg:text-sm',
+  small: 'text-xs',
 };

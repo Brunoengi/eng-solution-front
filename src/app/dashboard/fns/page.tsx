@@ -21,7 +21,7 @@ import {
   Settings,
   HelpCircle,
 } from 'lucide-react';
-import * as styles from '@/styles/dashboard-styles';
+import * as styles from '@/styles/fns-styles';
 
 export default function FnsPage() {
   // Estados
@@ -168,10 +168,10 @@ export default function FnsPage() {
           {/* Conteúdo */}
           <main className={styles.mainContentStyles.container}>
             <GridDashboard className={styles.mainContentStyles.gridContainer}>
-              {/* Layout Principal: Entrada (1/4) + Conteúdo (3/4) */}
-              <GridLayout>
-                {/* Seção de Entrada - 1/4 da largura */}
-                <GridItem cols={12} colsMd={3} colsSm={12} className="md:min-w-[20rem] lg:min-w-[24rem]">
+              {/* Layout Principal: Entrada (até 1/2) + Conteúdo em lg+ */}
+              <GridLayout className="grid grid-cols-1 lg:flex lg:gap-4">
+                {/* Seção de Entrada - Tamanho necessário em lg+ */}
+                <GridItem cols={12} className="lg:flex-none lg:min-w-[24rem] xl:min-w-[28rem]">
                   {/* Container principal com background destacado */}
                   <div className={styles.inputSectionLayoutStyles.container}>
                     {/* Título */}
@@ -277,8 +277,8 @@ export default function FnsPage() {
                   </div>
                 </GridItem>
 
-                {/* Seção de Conteúdo - 3/4 da largura */}
-                <GridItem cols={12} colsMd={9} colsSm={12}>
+                {/* Seção de Conteúdo - Ocupa o resto em lg+ */}
+                <GridItem cols={12} className="lg:flex-1">
                   <div className={styles.contentSectionLayoutStyles.wrapper}>
                     {/* Resumo dos Valores */}
                     <div className={styles.contentSectionLayoutStyles.summaryCard}>
