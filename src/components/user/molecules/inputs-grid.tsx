@@ -22,7 +22,7 @@ export const InputsGrid = forwardRef<HTMLDivElement, InputsGridProps>(
     return (
       <div 
         ref={ref}
-        className={`flex flex-wrap gap-x-3 gap-y-2 px-2 py-2 ${disabled ? 'opacity-60' : ''} ${className}`}
+        className={`flex flex-wrap justify-between gap-x-3 gap-y-2 px-2 py-2 ${disabled ? 'opacity-60' : ''} ${className}`}
       >
         {children}
       </div>

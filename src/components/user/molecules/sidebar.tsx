@@ -39,6 +39,10 @@ export interface MenuItem {
 interface AppSidebarProps {
   menuItems?: MenuItem[];
   configItems?: MenuItem[];
+  exportItems?: MenuItem[];
+  menuGroupLabel?: string;
+  configGroupLabel?: string;
+  exportGroupLabel?: string;
 }
 
 function SidebarToggle() {
@@ -117,9 +121,10 @@ function MenuItemComponent({ item }: { item: MenuItem }) {
   );
 }
 
-export function AppSidebar({ menuItems = [], configItems = [] }: AppSidebarProps) {
+export function AppSidebar({ menuItems = [], configItems = [], exportItems = [], menuGroupLabel = 'Menu Principal', configGroupLabel = 'Configurações', exportGroupLabel = 'Exportar' }: AppSidebarProps) {
   const defaultMenuItems: MenuItem[] = menuItems.length > 0 ? menuItems : [];
   const defaultConfigItems: MenuItem[] = configItems.length > 0 ? configItems : [];
+  const defaultExportItems: MenuItem[] = exportItems.length > 0 ? exportItems : [];
 
   return (
     <Sidebar>
@@ -133,7 +138,7 @@ export function AppSidebar({ menuItems = [], configItems = [] }: AppSidebarProps
       <SidebarContent>
         {defaultMenuItems.length > 0 && (
           <SidebarGroup>
-            <SidebarGroupLabel>Menu Principal</SidebarGroupLabel>
+            <SidebarGroupLabel>{menuGroupLabel}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {defaultMenuItems.map((item) => (
@@ -144,9 +149,22 @@ export function AppSidebar({ menuItems = [], configItems = [] }: AppSidebarProps
           </SidebarGroup>
         )}
 
+        {defaultExportItems.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>{exportGroupLabel}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {defaultExportItems.map((item) => (
+                  <MenuItemComponent key={item.label} item={item} />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
         {defaultConfigItems.length > 0 && (
           <SidebarGroup>
-            <SidebarGroupLabel>Configurações</SidebarGroupLabel>
+            <SidebarGroupLabel>{configGroupLabel}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {defaultConfigItems.map((item) => (

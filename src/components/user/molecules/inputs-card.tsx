@@ -22,7 +22,7 @@ export const InputsCard = forwardRef<HTMLDivElement, InputsCardProps>(
     return (
       <div ref={ref} className={`${className}`}>
         {/* Estrutura de tabela - estilo unificado */}
-        <div className="border border-input shadow-sm bg-background">
+        <div className="rounded-lg border border-input shadow-sm bg-background overflow-hidden">
           {/* Header como primeira linha da tabela */}
           <div className="flex items-center justify-between px-2 py-1 border-b border-input bg-muted/30">
             <h3 className="!text-xs font-bold text-foreground">{title}</h3>

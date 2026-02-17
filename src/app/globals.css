@@ -122,3 +122,16 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Forçar largura do sidebar */
+@layer components {
+  [data-sidebar="sidebar"] {
+    width: 18rem !important;
+    min-width: 18rem !important;
+    max-width: 18rem !important;
+  }
+  
+  .group\/sidebar-wrapper [style*="--sidebar-width"] {
+    --sidebar-width: 18rem !important;
+  }
+}
