@@ -214,17 +214,28 @@ export default function FnsPage() {
 
                     {/* Conteúdo com subcards */}
                     <div className={styles.inputSectionLayoutStyles.contentWrapper}>
-                      {/* Seção 1: Geometria */}
+                      {/* Grid principal: Inputs à esquerda, Imagem à direita */}
                       <div className={styles.inputSectionLayoutStyles.geometryGrid}>
-                        {/* Card de Inputs */}
-                        <CompactNumberInputsGrid
-                          title="Geometria da Viga"
-                          unit="cm"
-                          inputs={geometryInputs}
-                          onChange={handleGeometryChange}
-                        />
+                        {/* Coluna 1: Inputs empilhados */}
+                        <div className="flex flex-col gap-2 md:gap-3">
+                          {/* Geometria da Viga */}
+                          <CompactNumberInputsGrid
+                            title="Geometria da Viga"
+                            unit="cm"
+                            inputs={geometryInputs}
+                            onChange={handleGeometryChange}
+                          />
 
-                        {/* Card da Imagem */}
+                          {/* Material */}
+                          <CompactSelectInputsGrid
+                            title="Material"
+                            unit="tipo"
+                            inputs={materialInputs}
+                            onChange={handleMaterialChange}
+                          />
+                        </div>
+
+                        {/* Coluna 2: Imagem */}
                         <div className={styles.imageStyles.container}>
                           <img
                             src="/img/fns/fns-geometric.png"
@@ -234,36 +245,26 @@ export default function FnsPage() {
                         </div>
                       </div>
 
-                      {/* Seções 2 e 3: Material e Esforços lado a lado */}
+                      {/* Seções 3: Esforços e Coeficientes */}
                       <div className={styles.inputSectionLayoutStyles.materialEffortGrid}>
-                        {/* Seção 2: Material */}
-                        <div className="col-span-2">
-                          <CompactSelectInputsGrid
-                            title="Material"
-                            unit="tipo"
-                            inputs={materialInputs}
-                            onChange={handleMaterialChange}
-                          />
-                        </div>
-
                         {/* Seção 3: Esforços */}
-                        <div className="col-span-1">
-                          <CompactNumberInputsGrid
-                            title="Esforços"
-                            unit="kN.m"
-                            inputs={effortInputs}
-                            onChange={handleEffortChange}
-                          />
-                        </div>
-                      </div>
+                        <CompactNumberInputsGrid
+                          title="Esforços"
+                          unit="kN.m"
+                          inputs={effortInputs}
+                          onChange={handleEffortChange}
+                          className="lg:col-span-1"
+                        />
 
-                      {/* Seção 4: Coeficientes de Segurança */}
-                      <CompactNumberInputsGrid
-                        title="Coeficientes de Segurança"
-                        unit="adimensional"
-                        inputs={coefficientInputs}
-                        onChange={handleCoefficientChange}
-                      />
+                        {/* Seção 4: Coeficientes de Segurança */}
+                        <CompactNumberInputsGrid
+                          title="Coeficientes de Segurança"
+                          unit="adimensional"
+                          inputs={coefficientInputs}
+                          onChange={handleCoefficientChange}
+                          className="lg:col-span-2"
+                        />
+                      </div>
                     </div>
                   </div>
                 </GridItem>
