@@ -4,7 +4,7 @@ import { forwardRef, Ref, ChangeEvent, ReactNode } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export interface NumberInputItem {
+export interface CompactNumberInputItem {
   id: string;
   label: string | ReactNode;
   value: number | string;
@@ -16,17 +16,16 @@ export interface NumberInputItem {
   inputWidth?: string;
 }
 
-interface ManyNumberInputsProps {
+interface CompactNumberInputsProps {
   title: string;
   unit: string;
-  inputs: NumberInputItem[];
+  inputs: CompactNumberInputItem[];
   onChange: (inputId: string, value: number | string) => void;
   disabled?: boolean;
   className?: string;
-  gridCols?: number;
 }
 
-export const ManyNumberInputs = forwardRef<HTMLDivElement, ManyNumberInputsProps>(
+export const CompactNumberInputs = forwardRef<HTMLDivElement, CompactNumberInputsProps>(
   (
     {
       title,
@@ -35,7 +34,6 @@ export const ManyNumberInputs = forwardRef<HTMLDivElement, ManyNumberInputsProps
       onChange,
       disabled = false,
       className = '',
-      gridCols = 2,
     },
     ref: Ref<HTMLDivElement>
   ) => {
@@ -48,7 +46,7 @@ export const ManyNumberInputs = forwardRef<HTMLDivElement, ManyNumberInputsProps
       }
     };
 
-    const handleIncrement = (input: NumberInputItem) => {
+    const handleIncrement = (input: CompactNumberInputItem) => {
       const currentValue = input.value === '' ? 0 : Number(input.value);
       const step = input.step || 1;
       const newValue = currentValue + step;
@@ -58,7 +56,7 @@ export const ManyNumberInputs = forwardRef<HTMLDivElement, ManyNumberInputsProps
       }
     };
 
-    const handleDecrement = (input: NumberInputItem) => {
+    const handleDecrement = (input: CompactNumberInputItem) => {
       const currentValue = input.value === '' ? 0 : Number(input.value);
       const step = input.step || 1;
       const newValue = currentValue - step;
@@ -69,38 +67,40 @@ export const ManyNumberInputs = forwardRef<HTMLDivElement, ManyNumberInputsProps
     };
 
     return (
-      <div ref={ref} className={`flex flex-col gap-2 ${className}`}>
-        {/* Header com Título e Unidade */}
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-          <span className="rounded-md bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-            {unit}
-          </span>
-        </div>
+      <div ref={ref} className={`${className}`}>
+        {/* Estrutura de tabela - estilo unificado */}
+        <div className="border border-input shadow-sm bg-background">
+          {/* Header como primeira linha da tabela */}
+          <div className="flex items-center justify-between px-2 py-1 border-b border-input bg-muted/30">
+            <h3 className="text-xs font-semibold text-foreground">{title}</h3>
+            <span className="bg-background border border-input px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              {unit}
+            </span>
+          </div>
 
-        {/* Grid de Inputs */}
-        <div
-          className={`grid gap-3`}
-          style={{ gridTemplateColumns: `repeat(${gridCols}, 1fr)` }}
-        >
-          {inputs.map((input) => (
-            <div key={input.id} className="flex flex-col gap-1">
-              {/* Label e Input lado a lado com grid para alinhamento */}
-              <div className="grid grid-cols-[auto_1fr] items-center gap-2">
-                <Label className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+          {/* Linhas de inputs */}
+          {inputs.map((input, index) => (
+            <div key={input.id}>
+              {/* Linha da tabela com 2 colunas */}
+              <div className={`grid grid-cols-[1fr_auto] items-center gap-3 px-2 py-1 ${
+                index !== inputs.length - 1 ? 'border-b border-input' : ''
+              } ${disabled ? 'opacity-60' : ''} hover:bg-accent/5 transition-colors`}>
+                {/* Coluna 1: Label */}
+                <Label className="text-xs font-medium text-foreground whitespace-nowrap">
                   {input.label}
                 </Label>
 
-                <div className="relative flex items-center shadow-sm rounded-md w-fit ml-auto">
+                {/* Coluna 2: Controles (botões + input) */}
+                <div className="relative flex items-center">
                   {/* Botão de Decremento */}
                   <button
                     type="button"
                     onClick={() => handleDecrement(input)}
                     disabled={disabled || (input.min !== undefined && Number(input.value) <= input.min)}
-                    className="bg-background hover:bg-accent active:bg-accent/80 border border-r-0 border-input rounded-l-md p-2 h-9 focus:ring-2 focus:ring-ring focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150 hover:shadow-sm"
+                    className="bg-background hover:bg-accent active:bg-accent/80 p-1.5 h-7 focus:ring-1 focus:ring-ring focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
                   >
                     <svg
-                      className="w-3.5 h-3.5 text-foreground"
+                      className="w-2.5 h-2.5 text-foreground"
                       aria-hidden="true"
                       xmlns="http://www.w3.org/2000/svg"
                       fill="none"
@@ -126,10 +126,10 @@ export const ManyNumberInputs = forwardRef<HTMLDivElement, ManyNumberInputsProps
                     min={input.min}
                     max={input.max}
                     step={input.step}
-                    className={`h-9 text-sm font-medium ${input.inputWidth || 'w-16'} px-3 py-0 text-center border-x-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0 bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors ${
+                    className={`h-7 text-xs font-medium ${input.inputWidth || 'w-14'} px-2 py-0 text-center border-0 bg-muted/30 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-colors ${
                       input.error
-                        ? 'border-destructive focus-visible:border-destructive'
-                        : 'focus-visible:bg-accent/10'
+                        ? 'bg-destructive/10 focus-visible:bg-destructive/20'
+                        : 'focus-visible:bg-accent/20'
                     }`}
                   />
 
@@ -138,10 +138,10 @@ export const ManyNumberInputs = forwardRef<HTMLDivElement, ManyNumberInputsProps
                     type="button"
                     onClick={() => handleIncrement(input)}
                     disabled={disabled || (input.max !== undefined && Number(input.value) >= input.max)}
-                    className="bg-background hover:bg-accent active:bg-accent/80 border border-l-0 border-input rounded-r-md p-2 h-9 focus:ring-2 focus:ring-ring focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150 hover:shadow-sm"
+                    className="bg-background hover:bg-accent active:bg-accent/80 p-1.5 h-7 focus:ring-1 focus:ring-ring focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
                   >
                     <svg
-                      className="w-3.5 h-3.5 text-foreground"
+                      className="w-2.5 h-2.5 text-foreground"
                       aria-hidden="true"
                       xmlns="http://www.w3.org/2000/svg"
                       fill="none"
@@ -161,7 +161,7 @@ export const ManyNumberInputs = forwardRef<HTMLDivElement, ManyNumberInputsProps
 
               {/* Erro */}
               {input.error && (
-                <p className="text-xs font-medium text-destructive">
+                <p className="text-[10px] font-medium text-destructive px-2 pb-1">
                   {input.error}
                 </p>
               )}
@@ -173,4 +173,4 @@ export const ManyNumberInputs = forwardRef<HTMLDivElement, ManyNumberInputsProps
   }
 );
 
-ManyNumberInputs.displayName = 'ManyNumberInputs';
+CompactNumberInputs.displayName = 'CompactNumberInputs';
