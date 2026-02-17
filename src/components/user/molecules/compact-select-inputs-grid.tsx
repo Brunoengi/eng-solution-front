@@ -1,34 +1,34 @@
 'use client';
 
 import { forwardRef, Ref, ReactNode } from 'react';
-import { InputNumber } from '@/components/user/atoms/input-number';
+import { InputSelect, type SelectOption } from '@/components/user/atoms/input-select';
 import { InputsGrid } from '@/components/user/molecules/inputs-grid';
 import { InputsCard } from '@/components/user/molecules/inputs-card';
 
-export interface CompactNumberInputGridItem {
+export type { SelectOption };
+
+export interface CompactSelectInputGridItem {
   id: string;
   label: string | ReactNode;
-  value: number | string;
+  value: string | number;
+  options: SelectOption[];
   placeholder?: string;
-  min?: number;
-  max?: number;
-  step?: number;
   error?: string;
   inputWidth?: string;
   labelWidth?: string;
 }
 
-interface CompactNumberInputsGridProps {
+interface CompactSelectInputsGridProps {
   title: string;
   unit: string;
-  inputs: CompactNumberInputGridItem[];
-  onChange: (inputId: string, value: number | string) => void;
+  inputs: CompactSelectInputGridItem[];
+  onChange: (inputId: string, value: string | number) => void;
   disabled?: boolean;
   className?: string;
   columnsPerRow?: number; // Deprecated: O layout agora é flexível e se ajusta automaticamente
 }
 
-export const CompactNumberInputsGrid = forwardRef<HTMLDivElement, CompactNumberInputsGridProps>(
+export const CompactSelectInputsGrid = forwardRef<HTMLDivElement, CompactSelectInputsGridProps>(
   (
     {
       title,
@@ -43,18 +43,16 @@ export const CompactNumberInputsGrid = forwardRef<HTMLDivElement, CompactNumberI
   ) => {
     return (
       <InputsCard ref={ref} title={title} unit={unit} className={className}>
-        <InputsGrid disabled={disabled} minColumnWidth={160}>
+        <InputsGrid disabled={disabled} minColumnWidth={200}>
           {inputs.map((input) => (
-            <InputNumber
+            <InputSelect
               key={input.id}
               id={input.id}
               label={input.label}
               value={input.value}
+              options={input.options}
               onChange={(value) => onChange(input.id, value)}
               placeholder={input.placeholder}
-              min={input.min}
-              max={input.max}
-              step={input.step}
               error={input.error}
               disabled={disabled}
               inputWidth={input.inputWidth}
@@ -67,4 +65,4 @@ export const CompactNumberInputsGrid = forwardRef<HTMLDivElement, CompactNumberI
   }
 );
 
-CompactNumberInputsGrid.displayName = 'CompactNumberInputsGrid';
+CompactSelectInputsGrid.displayName = 'CompactSelectInputsGrid';

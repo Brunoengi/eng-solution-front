@@ -10,9 +10,8 @@ import {
 } from '@/components/ui/tooltip';
 import { AppSidebar, SidebarToggleButton, type MenuItem } from '../../../components/user/molecules/sidebar';
 import { GridContainer, GridLayout, GridItem, GridDashboard } from '../../../components/user/layout/grid-layout';
-import { ManyNumberInputs, type NumberInputItem } from '../../../components/user/molecules/many-number-inputs';
-import { ManySelectInputs, type SelectInputItem } from '../../../components/user/molecules/many-select-inputs';
-import { type SelectOption } from '../../../components/user/atoms/oneSelectInput';
+import { CompactNumberInputsGrid, type CompactNumberInputGridItem } from '@/components/user/molecules/compact-number-inputs-grid';
+import { CompactSelectInputsGrid, type CompactSelectInputGridItem, type SelectOption } from '@/components/user/molecules/compact-select-inputs-grid';
 import {
   LayoutDashboard,
   FileText,
@@ -65,10 +64,10 @@ export default function FnsPage() {
   ];
 
   // Dados de entrada - Geometria
-  const geometryInputs: NumberInputItem[] = [
-    { id: 'b', label: 'b (largura)', value: geometry.b, min: 0, step: 1, inputWidth: 'w-24' },
-    { id: 'h', label: 'h (altura)', value: geometry.h, min: 0, step: 1, inputWidth: 'w-24' },
-    { id: 'd_prime', label: "d' (cobrimento)", value: geometry.d_prime, min: 0, step: 0.5, inputWidth: 'w-24' },
+  const geometryInputs: CompactNumberInputGridItem[] = [
+    { id: 'b', label: 'b', value: geometry.b, min: 0, step: 1, inputWidth: 'w-20', labelWidth: 'w-8' },
+    { id: 'h', label: 'h', value: geometry.h, min: 0, step: 1, inputWidth: 'w-20', labelWidth: 'w-8' },
+    { id: 'd_prime', label: "d'", value: geometry.d_prime, min: 0, step: 0.5, inputWidth: 'w-20', labelWidth: 'w-8' },
   ];
 
   // Opções de concreto
@@ -97,14 +96,14 @@ export default function FnsPage() {
   ];
 
   // Materiais
-  const materialInputs: SelectInputItem[] = [
+  const materialInputs: CompactSelectInputGridItem[] = [
     {
       id: 'concrete',
       label: 'Concreto',
       value: materials.concrete,
       options: concreteOptions,
       placeholder: 'Selecione classe',
-      inputWidth: 'w-24',
+      inputWidth: 'w-20',
     },
     {
       id: 'steel',
@@ -112,20 +111,20 @@ export default function FnsPage() {
       value: materials.steel,
       options: steelOptions,
       placeholder: 'Selecione tipo',
-      inputWidth: 'w-24',
+      inputWidth: 'w-20',
     },
   ];
 
   // Esforços
-  const effortInputs: NumberInputItem[] = [
-    { id: 'Mk', label: <>M<sub>k</sub></>, value: efforts.Mk, placeholder: '0', step: 0.1, inputWidth: 'w-24' },
+  const effortInputs: CompactNumberInputGridItem[] = [
+    { id: 'Mk', label: <>M<sub>k</sub></>, value: efforts.Mk, placeholder: '0', step: 0.1, inputWidth: 'w-20', labelWidth: 'w-10' },
   ];
 
   // Coeficientes de segurança
-  const coefficientInputs: NumberInputItem[] = [
-    { id: 'gammac', label: <>γ<sub>c</sub></>, value: coefficients.gammac, step: 0.01, inputWidth: 'w-24' },
-    { id: 'gammas', label: <>γ<sub>s</sub></>, value: coefficients.gammas, step: 0.01, inputWidth: 'w-24' },
-    { id: 'gammaf', label: <>γ<sub>f</sub></>, value: coefficients.gammaf, step: 0.01, inputWidth: 'w-24' },
+  const coefficientInputs: CompactNumberInputGridItem[] = [
+    { id: 'gammac', label: <>γ<sub>c</sub></>, value: coefficients.gammac, step: 0.01, inputWidth: 'w-20', labelWidth: 'w-10' },
+    { id: 'gammas', label: <>γ<sub>s</sub></>, value: coefficients.gammas, step: 0.01, inputWidth: 'w-20', labelWidth: 'w-10' },
+    { id: 'gammaf', label: <>γ<sub>f</sub></>, value: coefficients.gammaf, step: 0.01, inputWidth: 'w-20', labelWidth: 'w-10' },
   ];
 
   const handleGeometryChange = (id: string, value: number | string) => {
@@ -218,15 +217,12 @@ export default function FnsPage() {
                       {/* Seção 1: Geometria */}
                       <div className={styles.inputSectionLayoutStyles.geometryGrid}>
                         {/* Card de Inputs */}
-                        <div className={styles.cardStyles.subcard}>
-                          <ManyNumberInputs
-                            title="Geometria da Viga"
-                            unit="cm"
-                            inputs={geometryInputs}
-                            onChange={handleGeometryChange}
-                            gridCols={1}
-                          />
-                        </div>
+                        <CompactNumberInputsGrid
+                          title="Geometria da Viga"
+                          unit="cm"
+                          inputs={geometryInputs}
+                          onChange={handleGeometryChange}
+                        />
 
                         {/* Card da Imagem */}
                         <div className={styles.imageStyles.container}>
@@ -241,38 +237,33 @@ export default function FnsPage() {
                       {/* Seções 2 e 3: Material e Esforços lado a lado */}
                       <div className={styles.inputSectionLayoutStyles.materialEffortGrid}>
                         {/* Seção 2: Material */}
-                        <div className={styles.cardStyles.subcard + ' col-span-2'}>
-                          <ManySelectInputs
+                        <div className="col-span-2">
+                          <CompactSelectInputsGrid
                             title="Material"
                             unit="tipo"
                             inputs={materialInputs}
                             onChange={handleMaterialChange}
-                            gridCols={2}
                           />
                         </div>
 
                         {/* Seção 3: Esforços */}
-                        <div className={styles.cardStyles.subcard + ' col-span-1'}>
-                          <ManyNumberInputs
+                        <div className="col-span-1">
+                          <CompactNumberInputsGrid
                             title="Esforços"
                             unit="kN.m"
                             inputs={effortInputs}
                             onChange={handleEffortChange}
-                            gridCols={1}
                           />
                         </div>
                       </div>
 
                       {/* Seção 4: Coeficientes de Segurança */}
-                      <div className={styles.cardStyles.subcard}>
-                        <ManyNumberInputs
-                          title="Coeficientes de Segurança"
-                          unit="adimensional"
-                          inputs={coefficientInputs}
-                          onChange={handleCoefficientChange}
-                          gridCols={3}
-                        />
-                      </div>
+                      <CompactNumberInputsGrid
+                        title="Coeficientes de Segurança"
+                        unit="adimensional"
+                        inputs={coefficientInputs}
+                        onChange={handleCoefficientChange}
+                      />
                     </div>
                   </div>
                 </GridItem>

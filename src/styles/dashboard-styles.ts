@@ -66,7 +66,7 @@ export const gridLayoutStyles = {
     contentSection: 'cols-12 md:cols-9 sm:cols-12',
   },
   // Para layout interno de geometria (input + imagem)
-  geometryGrid: 'grid grid-cols-1 md:grid-cols-2 gap-3 items-stretch',
+  geometryGrid: 'grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-stretch',
   // Para layout de material e esforços
   materialEffortGrid: 'grid gap-2 md:gap-3',
   // Para cards informativos
@@ -89,7 +89,7 @@ export const summaryCardStyles = {
 // Image Styles
 export const imageStyles = {
   container: 'rounded-lg border border-border bg-card p-3 md:p-4 shadow-sm flex items-center justify-center',
-  image: 'max-h-40 md:max-h-52 lg:max-h-64 w-full object-contain',
+  image: 'max-h-40 md:max-h-52 lg:max-h-64 w-auto max-w-full object-contain',
 };
 
 // Placeholder/Empty State Styles
