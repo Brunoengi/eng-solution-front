@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Button } from '@/components/ui/button';
@@ -13,17 +13,31 @@ import {
   Maximize2
 } from 'lucide-react';
 
+interface Pilar {
+  id: string;
+  width: number;
+  position: number;
+}
+
+interface Viga {
+  id: string;
+  width: number;
+  height: number;
+  startPosition: number;
+  endPosition: number;
+  startPillarId?: string;
+  endPillarId?: string;
+}
+
 interface Beam3DViewerProps {
-  width?: number;
-  height?: number;
-  length?: number;
+  pilares?: Pilar[];
+  vigas?: Viga[];
   className?: string;
 }
 
 export function Beam3DViewer({ 
-  width = 20, 
-  height = 40, 
-  length = 300,
+  pilares = [],
+  vigas = [],
   className = '' 
 }: Beam3DViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -32,6 +46,13 @@ export function Beam3DViewer({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const animationFrameRef = useRef<number | undefined>(undefined);
+  
+  const [tooltip, setTooltip] = useState<{
+    visible: boolean;
+    text: string;
+    x: number;
+    y: number;
+  }>({ visible: false, text: '', x: 0, y: 0 });
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -48,7 +69,15 @@ export function Beam3DViewer({
       0.1,
       2000
     );
-    camera.position.set(length * 1.5, height * 2, width * 3);
+    
+    // Calcular limites da estrutura para posicionar câmera
+    const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
+    const minPos = allPositions.length > 0 ? Math.min(...allPositions) : -200;
+    const maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 200;
+    const maxHeight = vigas.length > 0 ? Math.max(...vigas.map(v => v.height)) : 40;
+    const structureSize = Math.max(maxPos - minPos, maxHeight * 2, 200);
+    
+    camera.position.set(structureSize * 1.5, maxHeight * 2, structureSize * 1.5);
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
 
@@ -82,31 +111,119 @@ export function Beam3DViewer({
     directionalLight.shadow.camera.far = 500;
     scene.add(directionalLight);
 
-    // Beam (Viga)
-    const beamGeometry = new THREE.BoxGeometry(width, height, length);
-    const beamMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x808080,
-      roughness: 0.5,
-      metalness: 0.1
-    });
-    const beam = new THREE.Mesh(beamGeometry, beamMaterial);
-    beam.castShadow = true;
-    beam.receiveShadow = true;
-    scene.add(beam);
-
-    // Add edges to beam
-    const edges = new THREE.EdgesGeometry(beamGeometry);
     const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 });
-    const wireframe = new THREE.LineSegments(edges, lineMaterial);
-    beam.add(wireframe);
+
+    // Renderizar Vigas
+    const beamMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xe8e8e8,
+      roughness: 0.3,
+      metalness: 0.02,
+      transparent: true,
+      opacity: 0.4,
+      side: THREE.DoubleSide
+    });
+
+    vigas.forEach((viga) => {
+      const vigaLength = Math.abs(viga.endPosition - viga.startPosition);
+      const vigaCenterX = (viga.startPosition + viga.endPosition) / 2;
+      
+      const beamGeometry = new THREE.BoxGeometry(vigaLength, viga.height, viga.width);
+      const beam = new THREE.Mesh(beamGeometry, beamMaterial);
+      beam.position.set(vigaCenterX, 0, 0);
+      beam.castShadow = true;
+      beam.receiveShadow = true;
+      beam.userData = { 
+        type: 'beam', 
+        id: viga.id, 
+        width: viga.width, 
+        height: viga.height, 
+        length: vigaLength 
+      };
+      scene.add(beam);
+
+      // Add edges to beam
+      const edges = new THREE.EdgesGeometry(beamGeometry);
+      const wireframe = new THREE.LineSegments(edges, lineMaterial);
+      beam.add(wireframe);
+    });
+
+    // Renderizar Pilares
+    const columnMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xb0b0b0,
+      roughness: 0.6,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.7
+    });
+
+    pilares.forEach((pilar) => {
+      const pilarHeight = maxHeight * 1.5; // Altura proporcional à maior viga
+      const columnGeometry = new THREE.BoxGeometry(pilar.width, pilarHeight, pilar.width);
+      const column = new THREE.Mesh(columnGeometry, columnMaterial);
+      column.position.set(pilar.position, -maxHeight * 0.25, 0);
+      column.castShadow = true;
+      column.receiveShadow = true;
+      column.userData = { 
+        type: 'column', 
+        id: pilar.id, 
+        width: pilar.width, 
+        height: pilarHeight 
+      };
+      scene.add(column);
+
+      // Add edges to column
+      const columnEdges = new THREE.EdgesGeometry(columnGeometry);
+      const columnWireframe = new THREE.LineSegments(columnEdges, lineMaterial);
+      column.add(columnWireframe);
+    });
+
+    // Raycaster for hover detection
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    function onMouseMove(event: MouseEvent) {
+      if (!containerRef.current || !cameraRef.current || !sceneRef.current) return;
+
+      const rect = containerRef.current.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, cameraRef.current);
+      const intersects = raycaster.intersectObjects(sceneRef.current.children, false);
+
+      if (intersects.length > 0) {
+        const object = intersects[0].object;
+        if (object.userData.type === 'beam') {
+          setTooltip({
+            visible: true,
+            text: `${object.userData.id} - b: ${object.userData.width} cm, h: ${object.userData.height} cm, distância útil: ${object.userData.length} cm`,
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+          });
+        } else if (object.userData.type === 'column') {
+          setTooltip({
+            visible: true,
+            text: `${object.userData.id}: ${object.userData.width} × ${object.userData.width} cm`,
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+          });
+        } else {
+          setTooltip({ visible: false, text: '', x: 0, y: 0 });
+        }
+      } else {
+        setTooltip({ visible: false, text: '', x: 0, y: 0 });
+      }
+    }
+
+    renderer.domElement.addEventListener('mousemove', onMouseMove);
 
     // Grid Helper
-    const gridHelper = new THREE.GridHelper(length * 1.5, 20, 0xcccccc, 0xe0e0e0);
-    gridHelper.position.y = -height / 2 - 10;
+    const gridHelper = new THREE.GridHelper(structureSize * 1.5, 20, 0xcccccc, 0xe0e0e0);
+    gridHelper.position.y = -maxHeight / 2 - 10;
     scene.add(gridHelper);
 
     // Axes Helper
-    const axesHelper = new THREE.AxesHelper(length / 2);
+    const axesHelper = new THREE.AxesHelper(structureSize / 2);
     scene.add(axesHelper);
 
     // Animation loop
@@ -141,6 +258,10 @@ export function Beam3DViewer({
     return () => {
       window.removeEventListener('resize', handleResize);
       
+      if (rendererRef.current) {
+        rendererRef.current.domElement.removeEventListener('mousemove', onMouseMove);
+      }
+      
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
@@ -165,52 +286,77 @@ export function Beam3DViewer({
         });
       }
     };
-  }, [width, height, length]);
+  }, [pilares, vigas]);
 
   // Camera control functions
   const resetCamera = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
-    console.log('Reset camera - Position:', length * 1.5, height * 2, width * 3);
-    cameraRef.current.position.set(length * 1.5, height * 2, width * 3);
+    
+    const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
+    const minPos = allPositions.length > 0 ? Math.min(...allPositions) : -200;
+    const maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 200;
+    const maxHeight = vigas.length > 0 ? Math.max(...vigas.map(v => v.height)) : 40;
+    const structureSize = Math.max(maxPos - minPos, maxHeight * 2, 200);
+    
+    cameraRef.current.position.set(structureSize * 1.5, maxHeight * 2, structureSize * 1.5);
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
-  }, [width, height, length]);
+  }, [pilares, vigas]);
 
   const setIsometricView = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
-    const distance = Math.max(width, height, length) * 1.5;
-    console.log('Isometric view - Distance:', distance);
+    
+    const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
+    const minPos = allPositions.length > 0 ? Math.min(...allPositions) : -200;
+    const maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 200;
+    const maxHeight = vigas.length > 0 ? Math.max(...vigas.map(v => v.height)) : 40;
+    const maxWidth = vigas.length > 0 ? Math.max(...vigas.map(v => v.width)) : 20;
+    const distance = Math.max(maxWidth, maxHeight, maxPos - minPos) * 1.5;
+    
     cameraRef.current.position.set(distance * 0.7, distance * 0.7, distance * 0.7);
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
-  }, [width, height, length]);
+  }, [pilares, vigas]);
 
   const setFrontView = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
-    const distance = Math.max(width, height) * 4;
-    console.log('Front view - Distance:', distance);
+    
+    const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
+    const minPos = allPositions.length > 0 ? Math.min(...allPositions) : -200;
+    const maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 200;
+    const maxHeight = vigas.length > 0 ? Math.max(...vigas.map(v => v.height)) : 40;
+    const distance = Math.max(maxHeight, maxPos - minPos) * 1.2;
+    
     cameraRef.current.position.set(0, 0, distance);
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
-  }, [width, height]);
+  }, [pilares, vigas]);
 
   const setTopView = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
-    const distance = Math.max(width, length) * 1.5;
-    console.log('Top view - Distance:', distance);
+    
+    const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
+    const minPos = allPositions.length > 0 ? Math.min(...allPositions) : -200;
+    const maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 200;
+    const maxWidth = vigas.length > 0 ? Math.max(...vigas.map(v => v.width)) : 20;
+    const distance = Math.max(maxWidth, maxPos - minPos) * 1.5;
+    
     cameraRef.current.position.set(0, distance, 0);
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
-  }, [width, length]);
+  }, [pilares, vigas]);
 
   const setSideView = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
-    const distance = Math.max(height, length) * 1.2;
-    console.log('Side view - Distance:', distance);
+    
+    const maxWidth = vigas.length > 0 ? Math.max(...vigas.map(v => v.width)) : 20;
+    const maxHeight = vigas.length > 0 ? Math.max(...vigas.map(v => v.height)) : 40;
+    const distance = Math.max(maxWidth, maxHeight) * 4;
+    
     cameraRef.current.position.set(distance, 0, 0);
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
-  }, [height, length]);
+  }, [vigas]);
 
   const zoomIn = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
@@ -248,12 +394,12 @@ export function Beam3DViewer({
       {/* Canvas Container */}
       <div 
         ref={containerRef} 
-        className="w-full h-full rounded-lg overflow-hidden"
+        className="w-full h-full rounded-lg overflow-hidden absolute inset-0"
         style={{ touchAction: 'none' }}
       />
       
       {/* Control Panel */}
-      <div className="absolute top-4 right-4 flex flex-col gap-2 bg-background/80 backdrop-blur-sm p-2 rounded-lg border shadow-lg">
+      <div className="absolute top-4 right-4 flex flex-col gap-2 bg-background/80 backdrop-blur-sm p-2 rounded-lg border shadow-lg z-50 pointer-events-auto">
         {/* View Controls */}
         <div className="flex flex-col gap-1">
           <span className="text-xs font-semibold text-muted-foreground px-2 mb-1">Visualização</span>
@@ -337,12 +483,25 @@ export function Beam3DViewer({
       </div>
 
       {/* Instructions */}
-      <div className="absolute bottom-4 left-4 bg-background/80 backdrop-blur-sm p-2 rounded-lg border text-xs text-muted-foreground">
+      <div className="absolute bottom-4 left-4 bg-background/80 backdrop-blur-sm p-2 rounded-lg border text-xs text-muted-foreground z-50 pointer-events-none">
         <div className="flex items-center gap-2">
           <Maximize2 className="h-3 w-3" />
           <span>Arraste para rotacionar • Scroll para zoom • Botão direito para mover</span>
         </div>
       </div>
+
+      {/* Tooltip for dimensions */}
+      {tooltip.visible && (
+        <div 
+          className="absolute bg-background/95 backdrop-blur-sm px-3 py-2 rounded-lg border shadow-lg text-sm font-medium z-50 pointer-events-none"
+          style={{
+            left: `${tooltip.x + 15}px`,
+            top: `${tooltip.y - 10}px`,
+          }}
+        >
+          {tooltip.text}
+        </div>
+      )}
     </div>
   );
 }
