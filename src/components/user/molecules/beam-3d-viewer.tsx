@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { 
   RotateCcw, 
   ZoomIn, 
-  ZoomOut, 
+  ZoomOut,
   Box,
   Eye,
   Maximize2
@@ -29,15 +29,33 @@ interface Viga {
   endPillarId?: string;
 }
 
+interface CarregamentoPontual {
+  id: string;
+  position: number;
+  magnitude: number;
+}
+
+interface CarregamentoDistribuido {
+  id: string;
+  startPosition: number;
+  endPosition: number;
+  magnitude: number;
+  vigaId?: string;
+}
+
 interface Beam3DViewerProps {
   pilares?: Pilar[];
   vigas?: Viga[];
+  carregamentosPontuais?: CarregamentoPontual[];
+  carregamentosDistribuidos?: CarregamentoDistribuido[];
   className?: string;
 }
 
 export function Beam3DViewer({ 
   pilares = [],
   vigas = [],
+  carregamentosPontuais = [],
+  carregamentosDistribuidos = [],
   className = '' 
 }: Beam3DViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -53,6 +71,8 @@ export function Beam3DViewer({
     x: number;
     y: number;
   }>({ visible: false, text: '', x: 0, y: 0 });
+
+
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -177,6 +197,212 @@ export function Beam3DViewer({
       column.add(columnWireframe);
     });
 
+    // Paleta de cores distintas para carregamentos
+    const colorPalette = [
+      { hex: 0xff5722, rgb: '#ff5722' }, // Vermelho-laranja
+      { hex: 0x2196f3, rgb: '#2196f3' }, // Azul
+      { hex: 0x4caf50, rgb: '#4caf50' }, // Verde
+      { hex: 0xff9800, rgb: '#ff9800' }, // Laranja
+      { hex: 0x9c27b0, rgb: '#9c27b0' }, // Roxo
+      { hex: 0x00bcd4, rgb: '#00bcd4' }, // Ciano
+      { hex: 0xffeb3b, rgb: '#ffeb3b' }, // Amarelo
+      { hex: 0xe91e63, rgb: '#e91e63' }, // Rosa
+      { hex: 0x3f51b5, rgb: '#3f51b5' }, // Índigo
+      { hex: 0x009688, rgb: '#009688' }, // Teal
+      { hex: 0xff5252, rgb: '#ff5252' }, // Vermelho
+      { hex: 0x448aff, rgb: '#448aff' }, // Azul claro
+    ];
+
+    const getColor = (index: number) => {
+      return colorPalette[index % colorPalette.length];
+    };
+
+    // Função auxiliar para criar sprite de texto
+    const createTextSprite = (text: string, color: string, size: number) => {
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (!context) return null;
+
+      canvas.width = 256;
+      canvas.height = 128;
+
+      // Fundo semi-transparente
+      context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Texto
+      context.font = `bold ${size}px Arial`;
+      context.fillStyle = color;
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(text, canvas.width / 2, canvas.height / 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      const spriteMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+      const sprite = new THREE.Sprite(spriteMaterial);
+      sprite.scale.set(maxHeight * 1.2, maxHeight * 0.6, 1);
+      
+      return sprite;
+    };
+
+    // Renderizar Carregamentos Pontuais
+    carregamentosPontuais.forEach((carga, index) => {
+      const isDown = carga.magnitude < 0;
+      const arrowLength = maxHeight * 0.8;
+      const arrowHeadLength = maxHeight * 0.2;
+      const arrowHeadWidth = maxHeight * 0.15;
+      
+      // Cor única para este carregamento
+      const color = getColor(index);
+      
+      // Posição de aplicação na viga (topo ou base)
+      const applicationY = isDown ? maxHeight / 2 : -maxHeight / 2;
+      const startY = isDown ? maxHeight / 2 + arrowLength + arrowHeadLength : -maxHeight / 2 - arrowLength - arrowHeadLength;
+      
+      // Criar seta usando ArrowHelper
+      const direction = new THREE.Vector3(0, isDown ? -1 : 1, 0);
+      const origin = new THREE.Vector3(carga.position, startY, 0);
+      
+      const arrow = new THREE.ArrowHelper(
+        direction,
+        origin,
+        arrowLength,
+        color.hex,
+        arrowHeadLength,
+        arrowHeadWidth
+      );
+      
+      // Linha pontilhada conectando a seta ao ponto de aplicação
+      const points = [
+        new THREE.Vector3(carga.position, startY, 0),
+        new THREE.Vector3(carga.position, applicationY, 0)
+      ];
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+      const lineMaterial = new THREE.LineDashedMaterial({
+        color: color.hex,
+        dashSize: 2,
+        gapSize: 1,
+        linewidth: 2
+      });
+      const line = new THREE.Line(lineGeometry, lineMaterial);
+      line.computeLineDistances();
+      
+      scene.add(arrow);
+      scene.add(line);
+      
+      // Pequena esfera no ponto de aplicação
+      const sphereGeometry = new THREE.SphereGeometry(maxHeight * 0.08, 8, 8);
+      const sphereMaterial = new THREE.MeshStandardMaterial({
+        color: color.hex,
+        roughness: 0.3,
+        metalness: 0.5
+      });
+      const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+      sphere.position.set(carga.position, applicationY, 0);
+      scene.add(sphere);
+
+      // Label com o valor do carregamento
+      const labelText = `${Math.abs(carga.magnitude)} kN`;
+      const label = createTextSprite(labelText, color.rgb, 48);
+      if (label) {
+        const labelOffsetY = isDown ? startY + maxHeight * 0.7 : startY - maxHeight * 0.7;
+        label.position.set(carga.position, labelOffsetY, 0);
+        scene.add(label);
+      }
+    });
+
+    // Renderizar Carregamentos Distribuídos
+    carregamentosDistribuidos.forEach((carga, index) => {
+      const isDown = carga.magnitude < 0;
+      const distLength = Math.abs(carga.endPosition - carga.startPosition);
+      const numArrows = Math.max(4, Math.floor(distLength / 25));
+      const arrowLength = maxHeight * 0.6;
+      const arrowHeadLength = maxHeight * 0.15;
+      const arrowHeadWidth = maxHeight * 0.12;
+      
+      // Cor única para este carregamento (continua a partir dos pontuais)
+      const color = getColor(carregamentosPontuais.length + index);
+      
+      // Posição de aplicação na viga
+      const applicationY = isDown ? maxHeight / 2 : -maxHeight / 2;
+      const startY = isDown ? maxHeight / 2 + arrowLength + arrowHeadLength : -maxHeight / 2 - arrowLength - arrowHeadLength;
+      
+      // Linha horizontal conectando todas as setas
+      const horizontalPoints = [
+        new THREE.Vector3(carga.startPosition, startY, 0),
+        new THREE.Vector3(carga.endPosition, startY, 0)
+      ];
+      const horizontalGeometry = new THREE.BufferGeometry().setFromPoints(horizontalPoints);
+      const horizontalMaterial = new THREE.LineBasicMaterial({
+        color: color.hex,
+        linewidth: 3
+      });
+      const horizontalLine = new THREE.Line(horizontalGeometry, horizontalMaterial);
+      scene.add(horizontalLine);
+      
+      // Setas distribuídas
+      for (let i = 0; i < numArrows; i++) {
+        const posX = carga.startPosition + (distLength * i) / (numArrows - 1);
+        
+        // Criar seta usando ArrowHelper
+        const direction = new THREE.Vector3(0, isDown ? -1 : 1, 0);
+        const origin = new THREE.Vector3(posX, startY, 0);
+        
+        const arrow = new THREE.ArrowHelper(
+          direction,
+          origin,
+          arrowLength,
+          color.hex,
+          arrowHeadLength,
+          arrowHeadWidth
+        );
+        
+        scene.add(arrow);
+      }
+      
+      // Linhas verticais nas extremidades conectando à viga
+      const leftLinePoints = [
+        new THREE.Vector3(carga.startPosition, startY, 0),
+        new THREE.Vector3(carga.startPosition, applicationY, 0)
+      ];
+      const rightLinePoints = [
+        new THREE.Vector3(carga.endPosition, startY, 0),
+        new THREE.Vector3(carga.endPosition, applicationY, 0)
+      ];
+      
+      const extremityLineMaterial = new THREE.LineDashedMaterial({
+        color: color.hex,
+        dashSize: 2,
+        gapSize: 1,
+        linewidth: 2
+      });
+      
+      const leftLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(leftLinePoints),
+        extremityLineMaterial
+      );
+      leftLine.computeLineDistances();
+      
+      const rightLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(rightLinePoints),
+        extremityLineMaterial
+      );
+      rightLine.computeLineDistances();
+      
+      scene.add(leftLine);
+      scene.add(rightLine);
+
+      // Label com o valor do carregamento distribuído
+      const labelText = `${Math.abs(carga.magnitude)} kN/m`;
+      const label = createTextSprite(labelText, color.rgb, 48);
+      if (label) {
+        const centerX = (carga.startPosition + carga.endPosition) / 2;
+        const labelOffsetY = isDown ? startY + maxHeight * 0.4 : startY - maxHeight * 0.4;
+        label.position.set(centerX, labelOffsetY, 0);
+        scene.add(label);
+      }
+    });
+
     // Raycaster for hover detection
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -221,10 +447,6 @@ export function Beam3DViewer({
     const gridHelper = new THREE.GridHelper(structureSize * 1.5, 20, 0xcccccc, 0xe0e0e0);
     gridHelper.position.y = -maxHeight / 2 - 10;
     scene.add(gridHelper);
-
-    // Axes Helper
-    const axesHelper = new THREE.AxesHelper(structureSize / 2);
-    scene.add(axesHelper);
 
     // Animation loop
     function animate() {
@@ -286,7 +508,7 @@ export function Beam3DViewer({
         });
       }
     };
-  }, [pilares, vigas]);
+  }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
 
   // Camera control functions
   const resetCamera = useCallback(() => {
@@ -301,7 +523,7 @@ export function Beam3DViewer({
     cameraRef.current.position.set(structureSize * 1.5, maxHeight * 2, structureSize * 1.5);
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
-  }, [pilares, vigas]);
+  }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
 
   const setIsometricView = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
@@ -316,7 +538,7 @@ export function Beam3DViewer({
     cameraRef.current.position.set(distance * 0.7, distance * 0.7, distance * 0.7);
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
-  }, [pilares, vigas]);
+  }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
 
   const setFrontView = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
@@ -330,7 +552,7 @@ export function Beam3DViewer({
     cameraRef.current.position.set(0, 0, distance);
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
-  }, [pilares, vigas]);
+  }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
 
   const setTopView = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
@@ -344,7 +566,7 @@ export function Beam3DViewer({
     cameraRef.current.position.set(0, distance, 0);
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
-  }, [pilares, vigas]);
+  }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
 
   const setSideView = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
@@ -356,7 +578,7 @@ export function Beam3DViewer({
     cameraRef.current.position.set(distance, 0, 0);
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
-  }, [vigas]);
+  }, [vigas, carregamentosPontuais, carregamentosDistribuidos]);
 
   const zoomIn = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
@@ -398,8 +620,8 @@ export function Beam3DViewer({
         style={{ touchAction: 'none' }}
       />
       
-      {/* Control Panel */}
-      <div className="absolute top-4 right-4 flex flex-col gap-2 bg-background/80 backdrop-blur-sm p-2 rounded-lg border shadow-lg z-50 pointer-events-auto">
+      {/* Left Control Panel - View Controls */}
+      <div className="absolute top-4 left-4 flex flex-col gap-2 bg-background/80 backdrop-blur-sm p-2 rounded-lg border shadow-lg z-50 pointer-events-auto">
         {/* View Controls */}
         <div className="flex flex-col gap-1">
           <span className="text-xs font-semibold text-muted-foreground px-2 mb-1">Visualização</span>
@@ -444,6 +666,20 @@ export function Beam3DViewer({
         {/* Separator */}
         <div className="border-t my-1" />
 
+        {/* Reset */}
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={handleButtonClick(resetCamera, 'Reset')}
+          className="justify-start gap-2 h-8"
+        >
+          <RotateCcw className="h-3 w-3" />
+          <span className="text-xs">Resetar</span>
+        </Button>
+      </div>
+
+      {/* Right Control Panel - Zoom Controls */}
+      <div className="absolute top-4 right-4 flex flex-col gap-2 bg-background/80 backdrop-blur-sm p-2 rounded-lg border shadow-lg z-50 pointer-events-auto">
         {/* Zoom Controls */}
         <div className="flex flex-col gap-1">
           <span className="text-xs font-semibold text-muted-foreground px-2 mb-1">Zoom</span>
@@ -466,20 +702,6 @@ export function Beam3DViewer({
             <span className="text-xs">Afastar</span>
           </Button>
         </div>
-
-        {/* Separator */}
-        <div className="border-t my-1" />
-
-        {/* Reset */}
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={handleButtonClick(resetCamera, 'Reset')}
-          className="justify-start gap-2 h-8"
-        >
-          <RotateCcw className="h-3 w-3" />
-          <span className="text-xs">Resetar</span>
-        </Button>
       </div>
 
       {/* Instructions */}

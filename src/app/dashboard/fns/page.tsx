@@ -21,6 +21,8 @@ import {
   Plus,
   Trash2,
   Edit,
+  Link,
+  Home,
 } from 'lucide-react';
 import * as styles from '@/styles/fns-styles';
 
@@ -40,15 +42,35 @@ interface Viga {
   endPillarId?: string; // ID do pilar final (undefined se balanço)
 }
 
+interface CarregamentoPontual {
+  id: string;
+  position: number; // posição no eixo X (cm)
+  magnitude: number; // força (kN) - negativo = para baixo
+}
+
+interface CarregamentoDistribuido {
+  id: string;
+  startPosition: number; // posição inicial X (cm)
+  endPosition: number; // posição final X (cm)
+  magnitude: number; // carga por unidade de comprimento (kN/m) - negativo = para baixo
+  vigaId?: string; // ID da viga (opcional - se aplicado diretamente em uma viga)
+}
+
 export default function FnsPage() {
-  // Menu items - Dimensionamento
+  // Menu items - Seção Principal
   const menuItems: MenuItem[] = [
+    {
+      label: 'Elementos e Carregamentos',
+      href: '/dashboard/fns',
+      icon: Home,
+    },
     {
       label: 'Dimensionamento',
       icon: Layers,
       items: [
         { label: 'Armadura Longitudinal', href: '/dashboard/fns/longitudinal', icon: ArrowUpDown },
         { label: 'Armadura Transversal', href: '/dashboard/fns/transversal', icon: Square },
+        { label: 'Armadura de Suspensão', href: '/dashboard/fns/suspensao', icon: Link },
         { label: 'Armadura de Ancoragem', href: '/dashboard/fns/ancoragem', icon: Anchor },
         { label: 'Armadura de Pele', href: '/dashboard/fns/pele', icon: Layers },
       ],
@@ -90,6 +112,27 @@ export default function FnsPage() {
     direction: 'right' as 'left' | 'right' 
   });
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetCarregamentosOpen, setSheetCarregamentosOpen] = useState(false);
+
+  // Keys para resetar formulários (force re-render of uncontrolled inputs)
+  const [pilarFormKey, setPilarFormKey] = useState(0);
+  const [vigaFormKey, setVigaFormKey] = useState(0);
+  const [cargaPontualFormKey, setCargaPontualFormKey] = useState(0);
+  const [cargaDistFormKey, setCargaDistFormKey] = useState(0);
+
+  // Estado para carregamentos
+  const [carregamentosPontuais, setCarregamentosPontuais] = useState<CarregamentoPontual[]>([]);
+  const [carregamentosDistribuidos, setCarregamentosDistribuidos] = useState<CarregamentoDistribuido[]>([]);
+  
+  // Formulários para novos carregamentos
+  const [newCarregamentoPontual, setNewCarregamentoPontual] = useState({ position: 0, magnitude: -10 });
+  const [newCarregamentoDistribuido, setNewCarregamentoDistribuido] = useState({ 
+    startPosition: 0, 
+    endPosition: 100, 
+    magnitude: -5,
+    tipoDefinicao: 'viga' as 'posicao' | 'viga',
+    vigaId: ''
+  });
 
   // Função para verificar se há balanço bloqueando posição
   const getPilaresComBalanco = () => {
@@ -106,6 +149,62 @@ export default function FnsPage() {
     });
     
     return pilaresBloqueados;
+  };
+
+  // Função para renumerar pilares e vigas da esquerda para a direita
+  const renumerarPilares = (pilaresAtuais: Pilar[], vigasAtuais: Viga[]) => {
+    // Ordenar pilares por posição (da esquerda para a direita)
+    const pilaresOrdenados = [...pilaresAtuais].sort((a, b) => a.position - b.position);
+    
+    // Criar mapeamento de IDs antigos para novos dos pilares
+    const mapeamentoPilaresIds = new Map<string, string>();
+    pilaresOrdenados.forEach((pilar, index) => {
+      const novoId = `P${index + 1}`;
+      mapeamentoPilaresIds.set(pilar.id, novoId);
+    });
+    
+    // Atualizar IDs dos pilares
+    const pilaresRenumerados = pilaresOrdenados.map((pilar, index) => ({
+      ...pilar,
+      id: `P${index + 1}`
+    }));
+    
+    // Atualizar referências dos pilares nas vigas
+    const vigasComPilaresAtualizados = vigasAtuais.map(viga => ({
+      ...viga,
+      startPillarId: viga.startPillarId ? mapeamentoPilaresIds.get(viga.startPillarId) : undefined,
+      endPillarId: viga.endPillarId ? mapeamentoPilaresIds.get(viga.endPillarId) : undefined
+    }));
+
+    // Ordenar vigas por posição inicial (startPosition) da esquerda para a direita
+    const vigasOrdenadas = [...vigasComPilaresAtualizados].sort((a, b) => {
+      const posA = Math.min(a.startPosition, a.endPosition);
+      const posB = Math.min(b.startPosition, b.endPosition);
+      return posA - posB;
+    });
+
+    // Criar mapeamento de IDs antigos para novos das vigas
+    const mapeamentoVigasIds = new Map<string, string>();
+    vigasOrdenadas.forEach((viga, index) => {
+      const novoId = `V${index + 1}`;
+      mapeamentoVigasIds.set(viga.id, novoId);
+    });
+
+    // Renumerar vigas
+    const vigasRenumeradas = vigasOrdenadas.map((viga, index) => ({
+      ...viga,
+      id: `V${index + 1}`
+    }));
+
+    // Atualizar referências de vigaId nos carregamentos distribuídos
+    setCarregamentosDistribuidos(prev => prev.map(carga => ({
+      ...carga,
+      vigaId: carga.vigaId && mapeamentoVigasIds.has(carga.vigaId) 
+        ? mapeamentoVigasIds.get(carga.vigaId) 
+        : carga.vigaId
+    })));
+    
+    return { pilares: pilaresRenumerados, vigas: vigasRenumeradas };
   };
 
   // Função para adicionar pilar
@@ -137,16 +236,18 @@ export default function FnsPage() {
       position: newPilar.position,
     };
     
-    setPilares([...pilares, newPilarObj]);
+    const pilaresTemp = [...pilares, newPilarObj];
 
     // Criar vigas automaticamente entre pilares adjacentes
-    const sortedPilares = [...pilares, newPilarObj].sort((a, b) => a.position - b.position);
+    const sortedPilares = [...pilaresTemp].sort((a, b) => a.position - b.position);
     const index = sortedPilares.findIndex(p => p.id === newId);
+    
+    let vigasTemp = [...vigas];
     
     // Criar viga à esquerda se houver pilar anterior
     if (index > 0) {
       const prevPilar = sortedPilares[index - 1];
-      const newVigaId = `V${vigas.length + 1}`;
+      const newVigaId = `V${vigasTemp.length + 1}`;
       const newVigaObj: Viga = {
         id: newVigaId,
         width: 20,
@@ -156,13 +257,13 @@ export default function FnsPage() {
         startPillarId: prevPilar.id,
         endPillarId: newPilarObj.id,
       };
-      setVigas([...vigas, newVigaObj]);
+      vigasTemp = [...vigasTemp, newVigaObj];
     }
     
     // Criar viga à direita se houver pilar posterior
     if (index < sortedPilares.length - 1) {
       const nextPilar = sortedPilares[index + 1];
-      const newVigaId = `V${vigas.length + (index > 0 ? 2 : 1)}`;
+      const newVigaId = `V${vigasTemp.length + 1}`;
       const newVigaObj: Viga = {
         id: newVigaId,
         width: 20,
@@ -172,10 +273,16 @@ export default function FnsPage() {
         startPillarId: newPilarObj.id,
         endPillarId: nextPilar.id,
       };
-      setVigas(prev => [...prev, newVigaObj]);
+      vigasTemp = [...vigasTemp, newVigaObj];
     }
 
+    // Renumerar pilares e atualizar vigas
+    const { pilares: pilaresRenumerados, vigas: vigasAtualizadas } = renumerarPilares(pilaresTemp, vigasTemp);
+    
+    setPilares(pilaresRenumerados);
+    setVigas(vigasAtualizadas);
     setNewPilar({ width: 20, position: 0 });
+    setPilarFormKey(prev => prev + 1); // Reset form
   };
 
   // Função para adicionar viga em balanço
@@ -223,20 +330,177 @@ export default function FnsPage() {
       // endPillarId fica undefined pois é balanço
     };
     
-    setVigas([...vigas, newVigaObj]);
+    const vigasTemp = [...vigas, newVigaObj];
+
+    // Renumerar vigas após adicionar
+    const { pilares: pilaresAtualizados, vigas: vigasRenumeradas } = renumerarPilares(pilares, vigasTemp);
+    
+    setPilares(pilaresAtualizados);
+    setVigas(vigasRenumeradas);
     setNewViga({ width: 20, height: 40, length: 100, direction: 'right' });
+    setVigaFormKey(prev => prev + 1); // Reset form
   };
 
-  // Função para remover pilar
+  // Função para resetar toda a estrutura
+  const resetAll = () => {
+    if (window.confirm('Tem certeza que deseja remover tudo? Esta ação não pode ser desfeita.')) {
+      setPilares([]);
+      setVigas([]);
+      setCarregamentosPontuais([]);
+      setCarregamentosDistribuidos([]);
+    }
+  };
+
+  // Função para remover pilar (apenas pilares de canto)
   const removePilar = (id: string) => {
-    setPilares(pilares.filter(p => p.id !== id));
+    // Ordenar pilares por posição
+    const pilaresOrdenados = [...pilares].sort((a, b) => a.position - b.position);
+    
+    // Verificar se é pilar de canto (primeiro ou último)
+    const isCornerPillar = pilaresOrdenados[0].id === id || pilaresOrdenados[pilaresOrdenados.length - 1].id === id;
+    
+    if (!isCornerPillar) {
+      alert('Apenas pilares de canto (extremidades) podem ser excluídos.');
+      return;
+    }
+    
+    // Encontrar vigas conectadas ao pilar
+    const vigasParaRemover = vigas.filter(v => v.startPillarId === id || v.endPillarId === id);
+    
+    // Remover carregamentos das vigas que serão removidas
+    vigasParaRemover.forEach(viga => {
+      // Remover carregamentos distribuídos associados à viga
+      setCarregamentosDistribuidos(prev => prev.filter(c => c.vigaId !== viga.id));
+      
+      // Remover carregamentos pontuais que estão dentro do intervalo da viga
+      setCarregamentosPontuais(prev => prev.filter(c => {
+        const vigaMin = Math.min(viga.startPosition, viga.endPosition);
+        const vigaMax = Math.max(viga.startPosition, viga.endPosition);
+        return c.position < vigaMin || c.position > vigaMax;
+      }));
+    });
+    
     // Remover vigas conectadas
-    setVigas(vigas.filter(v => v.startPillarId !== id && v.endPillarId !== id));
+    const vigasRestantes = vigas.filter(v => v.startPillarId !== id && v.endPillarId !== id);
+    
+    // Remover pilar
+    const pilaresRestantes = pilares.filter(p => p.id !== id);
+    
+    // Renumerar pilares e atualizar vigas
+    const { pilares: pilaresRenumerados, vigas: vigasAtualizadas } = renumerarPilares(pilaresRestantes, vigasRestantes);
+    
+    setPilares(pilaresRenumerados);
+    setVigas(vigasAtualizadas);
   };
 
   // Função para remover viga
   const removeViga = (id: string) => {
-    setVigas(vigas.filter(v => v.id !== id));
+    const viga = vigas.find(v => v.id === id);
+    if (!viga) return;
+    
+    // Remover carregamentos distribuídos associados à viga
+    setCarregamentosDistribuidos(prev => prev.filter(c => c.vigaId !== id));
+    
+    // Remover carregamentos pontuais que estão dentro do intervalo da viga
+    setCarregamentosPontuais(prev => prev.filter(c => {
+      const vigaMin = Math.min(viga.startPosition, viga.endPosition);
+      const vigaMax = Math.max(viga.startPosition, viga.endPosition);
+      return c.position < vigaMin || c.position > vigaMax;
+    }));
+    
+    // Remover viga
+    const vigasRestantes = vigas.filter(v => v.id !== id);
+
+    // Renumerar vigas após remoção
+    const { pilares: pilaresAtualizados, vigas: vigasRenumeradas } = renumerarPilares(pilares, vigasRestantes);
+    
+    setPilares(pilaresAtualizados);
+    setVigas(vigasRenumeradas);
+  };
+
+  // Funções para gerenciar carregamentos pontuais
+  const addCarregamentoPontual = () => {
+    // Validar se a posição está dentro da estrutura
+    const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
+    const minPos = Math.min(...allPositions);
+    const maxPos = Math.max(...allPositions);
+    
+    if (newCarregamentoPontual.position < minPos || newCarregamentoPontual.position > maxPos) {
+      alert(`A posição do carregamento deve estar entre ${minPos} cm e ${maxPos} cm`);
+      return;
+    }
+    
+    const newId = `CP${carregamentosPontuais.length + 1}`;
+    const newCarregamento: CarregamentoPontual = {
+      id: newId,
+      position: newCarregamentoPontual.position,
+      magnitude: newCarregamentoPontual.magnitude,
+    };
+    
+    setCarregamentosPontuais([...carregamentosPontuais, newCarregamento]);
+    setNewCarregamentoPontual({ position: 0, magnitude: -10 });
+    setCargaPontualFormKey(prev => prev + 1); // Reset form
+  };
+
+  const removeCarregamentoPontual = (id: string) => {
+    setCarregamentosPontuais(carregamentosPontuais.filter(c => c.id !== id));
+  };
+
+  // Funções para gerenciar carregamentos distribuídos
+  const addCarregamentoDistribuido = () => {
+    let startPos = newCarregamentoDistribuido.startPosition;
+    let endPos = newCarregamentoDistribuido.endPosition;
+    let vigaId: string | undefined = undefined;
+    
+    // Se definido por viga, usar posições da viga
+    if (newCarregamentoDistribuido.tipoDefinicao === 'viga') {
+      const viga = vigas.find(v => v.id === newCarregamentoDistribuido.vigaId);
+      if (!viga) {
+        alert('Selecione uma viga válida');
+        return;
+      }
+      startPos = viga.startPosition;
+      endPos = viga.endPosition;
+      vigaId = viga.id;
+    } else {
+      // Validar se as posições estão dentro da estrutura
+      const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
+      const minPos = Math.min(...allPositions);
+      const maxPos = Math.max(...allPositions);
+      
+      if (startPos < minPos || startPos > maxPos || endPos < minPos || endPos > maxPos) {
+        alert(`As posições do carregamento devem estar entre ${minPos} cm e ${maxPos} cm`);
+        return;
+      }
+      
+      if (startPos >= endPos) {
+        alert('A posição inicial deve ser menor que a posição final');
+        return;
+      }
+    }
+    
+    const newId = `CD${carregamentosDistribuidos.length + 1}`;
+    const newCarregamento: CarregamentoDistribuido = {
+      id: newId,
+      startPosition: startPos,
+      endPosition: endPos,
+      magnitude: newCarregamentoDistribuido.magnitude,
+      vigaId: vigaId,
+    };
+    
+    setCarregamentosDistribuidos([...carregamentosDistribuidos, newCarregamento]);
+    setNewCarregamentoDistribuido({ 
+      startPosition: 0, 
+      endPosition: 100, 
+      magnitude: -5,
+      tipoDefinicao: 'viga',
+      vigaId: ''
+    });
+    setCargaDistFormKey(prev => prev + 1); // Reset form
+  };
+
+  const removeCarregamentoDistribuido = (id: string) => {
+    setCarregamentosDistribuidos(carregamentosDistribuidos.filter(c => c.id !== id));
   };
 
   return (
@@ -268,7 +532,7 @@ export default function FnsPage() {
           </div>
 
           {/* Conteúdo */}
-          <main className="container mx-auto px-4 py-6 md:px-6 md:py-8 lg:px-8 lg:py-10">
+          <main className="container mx-auto px-4 pb-16 md:px-6 md:pb-20 lg:px-8 lg:pb-24">
             <div className="flex flex-col gap-6">
               {/* Visualizador da Viga com Abas 2D/3D */}
               <Tabs defaultValue="3d" className="w-full">
@@ -286,7 +550,7 @@ export default function FnsPage() {
                         <SheetTrigger asChild>
                           <Button variant="outline" size="sm" className="h-8">
                             <Edit className="h-4 w-4 mr-2" />
-                            Gerenciar
+                            Gerenciar elementos
                           </Button>
                         </SheetTrigger>
                         <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
@@ -296,6 +560,19 @@ export default function FnsPage() {
                               Adicione, edite ou remova pilares e vigas da estrutura
                             </SheetDescription>
                           </SheetHeader>
+                          
+                          {/* Botão Reset */}
+                          <div className="mt-4">
+                            <Button 
+                              variant="destructive" 
+                              size="sm" 
+                              onClick={resetAll}
+                              className="w-full"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Resetar Tudo
+                            </Button>
+                          </div>
                           
                           <div className="mt-6 space-y-6">
                             {/* Seção Pilares */}
@@ -322,7 +599,7 @@ export default function FnsPage() {
                               </div>
                               
                               {/* Formulário adicionar pilar */}
-                              <div className="border rounded-lg p-4 space-y-3">
+                              <div key={pilarFormKey} className="border rounded-lg p-4 space-y-3">
                                 <h5 className="text-xs font-semibold">Adicionar Pilar (Cria Viga Automaticamente)</h5>
                                 <p className="text-xs text-muted-foreground">Ao adicionar um pilar, vigas serão criadas automaticamente entre pilares adjacentes</p>
                                 <div className="grid grid-cols-2 gap-3">
@@ -331,9 +608,15 @@ export default function FnsPage() {
                                     <Input
                                       id="pilar-width"
                                       type="number"
-                                      value={newPilar.width}
-                                      onChange={(e) => setNewPilar({ ...newPilar, width: Number(e.target.value) })}
+                                      defaultValue={newPilar.width}
+                                      onChange={(e) => {
+                                        const val = e.target.valueAsNumber;
+                                        if (!isNaN(val)) {
+                                          setNewPilar({ ...newPilar, width: val });
+                                        }
+                                      }}
                                       className="h-8 text-xs"
+                                      step="any"
                                     />
                                   </div>
                                   <div>
@@ -341,8 +624,13 @@ export default function FnsPage() {
                                     <Input
                                       id="pilar-position"
                                       type="number"
-                                      value={newPilar.position}
-                                      onChange={(e) => setNewPilar({ ...newPilar, position: Number(e.target.value) })}
+                                      defaultValue={newPilar.position}
+                                      onChange={(e) => {
+                                        const val = e.target.valueAsNumber;
+                                        if (!isNaN(val)) {
+                                          setNewPilar({ ...newPilar, position: val });
+                                        }
+                                      }}
                                       className="h-8 text-xs"
                                       step="any"
                                     />
@@ -388,7 +676,7 @@ export default function FnsPage() {
                               </div>
                               
                               {/* Formulário adicionar viga em balanço */}
-                              <div className="border rounded-lg p-4 space-y-3">
+                              <div key={vigaFormKey} className="border rounded-lg p-4 space-y-3">
                                 <h5 className="text-xs font-semibold">Adicionar Viga em Balanço</h5>
                                 <p className="text-xs text-muted-foreground">Cria uma viga em balanço na extremidade esquerda ou direita</p>
                                 <div className="space-y-3">
@@ -398,9 +686,15 @@ export default function FnsPage() {
                                       <Input
                                         id="viga-width"
                                         type="number"
-                                        value={newViga.width}
-                                        onChange={(e) => setNewViga({ ...newViga, width: Number(e.target.value) })}
+                                        defaultValue={newViga.width}
+                                        onChange={(e) => {
+                                          const val = e.target.valueAsNumber;
+                                          if (!isNaN(val)) {
+                                            setNewViga({ ...newViga, width: val });
+                                          }
+                                        }}
                                         className="h-8 text-xs"
+                                        step="any"
                                       />
                                     </div>
                                     <div>
@@ -408,9 +702,15 @@ export default function FnsPage() {
                                       <Input
                                         id="viga-height"
                                         type="number"
-                                        value={newViga.height}
-                                        onChange={(e) => setNewViga({ ...newViga, height: Number(e.target.value) })}
+                                        defaultValue={newViga.height}
+                                        onChange={(e) => {
+                                          const val = e.target.valueAsNumber;
+                                          if (!isNaN(val)) {
+                                            setNewViga({ ...newViga, height: val });
+                                          }
+                                        }}
                                         className="h-8 text-xs"
+                                        step="any"
                                       />
                                     </div>
                                   </div>
@@ -419,9 +719,15 @@ export default function FnsPage() {
                                     <Input
                                       id="viga-length"
                                       type="number"
-                                      value={newViga.length}
-                                      onChange={(e) => setNewViga({ ...newViga, length: Number(e.target.value) })}
+                                      defaultValue={newViga.length}
+                                      onChange={(e) => {
+                                        const val = e.target.valueAsNumber;
+                                        if (!isNaN(val)) {
+                                          setNewViga({ ...newViga, length: val });
+                                        }
+                                      }}
                                       className="h-8 text-xs"
+                                      step="any"
                                     />
                                   </div>
                                   <div>
@@ -449,18 +755,267 @@ export default function FnsPage() {
                           </div>
                         </SheetContent>
                       </Sheet>
+                      
+                      {/* Botão para gerenciar carregamentos */}
+                      <Sheet open={sheetCarregamentosOpen} onOpenChange={setSheetCarregamentosOpen}>
+                        <SheetTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-8">
+                            <Layers className="h-4 w-4 mr-2" />
+                            Gerenciar carregamentos
+                          </Button>
+                        </SheetTrigger>
+                        <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
+                          <SheetHeader>
+                            <SheetTitle>Gerenciar Carregamentos</SheetTitle>
+                            <SheetDescription>
+                              Adicione, edite ou remova carregamentos aplicados na estrutura
+                            </SheetDescription>
+                          </SheetHeader>
+                          
+                          <div className="mt-6 space-y-6">
+                            {/* Seção Carregamentos Pontuais */}
+                            <div>
+                              <h4 className="text-sm font-semibold mb-3">Carregamentos Pontuais</h4>
+                              <div className="space-y-2 mb-4">
+                                {carregamentosPontuais.map((carga) => (
+                                  <div key={carga.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                                    <div>
+                                      <p className="text-sm font-medium">{carga.id}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        Posição: {carga.position} cm | Magnitude: {carga.magnitude} kN
+                                      </p>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => removeCarregamentoPontual(carga.id)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                              
+                              <div key={cargaPontualFormKey} className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                                <h5 className="text-xs font-semibold">Adicionar Carregamento Pontual</h5>
+                                <div className="space-y-2">
+                                  <div>
+                                    <Label htmlFor="carga-pontual-position" className="text-xs">Posição X (cm)</Label>
+                                    <Input
+                                      id="carga-pontual-position"
+                                      type="number"
+                                      step="any"
+                                      defaultValue={newCarregamentoPontual.position}
+                                      onChange={(e) => {
+                                        const val = e.target.valueAsNumber;
+                                        if (!isNaN(val)) {
+                                          setNewCarregamentoPontual({
+                                            ...newCarregamentoPontual,
+                                            position: val
+                                          });
+                                        }
+                                      }}
+                                      className="h-8"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label htmlFor="carga-pontual-magnitude" className="text-xs">
+                                      Magnitude (kN) - Negativo = ↓
+                                    </Label>
+                                    <Input
+                                      id="carga-pontual-magnitude"
+                                      type="number"
+                                      step="any"
+                                      defaultValue={newCarregamentoPontual.magnitude}
+                                      onChange={(e) => {
+                                        const val = e.target.valueAsNumber;
+                                        if (!isNaN(val)) {
+                                          setNewCarregamentoPontual({
+                                            ...newCarregamentoPontual,
+                                            magnitude: val
+                                          });
+                                        }
+                                      }}
+                                      className="h-8"
+                                    />
+                                  </div>
+                                </div>
+                                <Button onClick={addCarregamentoPontual} size="sm" className="w-full">
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Adicionar Carregamento Pontual
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Seção Carregamentos Distribuídos */}
+                            <div>
+                              <h4 className="text-sm font-semibold mb-3">Carregamentos Distribuídos</h4>
+                              <div className="space-y-2 mb-4">
+                                {carregamentosDistribuidos.map((carga) => (
+                                  <div key={carga.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                                    <div>
+                                      <p className="text-sm font-medium">
+                                        {carga.id} {carga.vigaId && `(${carga.vigaId})`}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        De {carga.startPosition} cm até {carga.endPosition} cm | {carga.magnitude} kN/m
+                                      </p>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => removeCarregamentoDistribuido(carga.id)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                              
+                              <div key={cargaDistFormKey} className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                                <h5 className="text-xs font-semibold">Adicionar Carregamento Distribuído</h5>
+                                <div className="space-y-2">
+                                  <div>
+                                    <Label htmlFor="carga-dist-tipo" className="text-xs">Definir por</Label>
+                                    <Select
+                                      value={newCarregamentoDistribuido.tipoDefinicao}
+                                      onValueChange={(value: 'posicao' | 'viga') => 
+                                        setNewCarregamentoDistribuido({
+                                          ...newCarregamentoDistribuido,
+                                          tipoDefinicao: value
+                                        })
+                                      }
+                                    >
+                                      <SelectTrigger className="h-8">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="posicao">Posição (X inicial e final)</SelectItem>
+                                        <SelectItem value="viga">Viga específica</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+
+                                  {newCarregamentoDistribuido.tipoDefinicao === 'posicao' ? (
+                                    <>
+                                      <div>
+                                        <Label htmlFor="carga-dist-start" className="text-xs">Posição Inicial X (cm)</Label>
+                                        <Input
+                                          id="carga-dist-start"
+                                          type="number"
+                                          step="any"
+                                          defaultValue={newCarregamentoDistribuido.startPosition}
+                                          onChange={(e) => {
+                                            const val = e.target.valueAsNumber;
+                                            if (!isNaN(val)) {
+                                              setNewCarregamentoDistribuido({
+                                                ...newCarregamentoDistribuido,
+                                                startPosition: val
+                                              });
+                                            }
+                                          }}
+                                          className="h-8"
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label htmlFor="carga-dist-end" className="text-xs">Posição Final X (cm)</Label>
+                                        <Input
+                                          id="carga-dist-end"
+                                          type="number"
+                                          step="any"
+                                          defaultValue={newCarregamentoDistribuido.endPosition}
+                                          onChange={(e) => {
+                                            const val = e.target.valueAsNumber;
+                                            if (!isNaN(val)) {
+                                              setNewCarregamentoDistribuido({
+                                                ...newCarregamentoDistribuido,
+                                                endPosition: val
+                                              });
+                                            }
+                                          }}
+                                          className="h-8"
+                                        />
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div>
+                                      <Label htmlFor="carga-dist-viga" className="text-xs">Selecionar Viga</Label>
+                                      <Select
+                                        value={newCarregamentoDistribuido.vigaId}
+                                        onValueChange={(value) => 
+                                          setNewCarregamentoDistribuido({
+                                            ...newCarregamentoDistribuido,
+                                            vigaId: value
+                                          })
+                                        }
+                                      >
+                                        <SelectTrigger className="h-8">
+                                          <SelectValue placeholder="Selecione uma viga" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {vigas.map((viga) => (
+                                            <SelectItem key={viga.id} value={viga.id}>
+                                              {viga.id} ({viga.startPosition} cm a {viga.endPosition} cm)
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  )}
+
+                                  <div>
+                                    <Label htmlFor="carga-dist-magnitude" className="text-xs">
+                                      Magnitude (kN/m) - Negativo = ↓
+                                    </Label>
+                                    <Input
+                                      id="carga-dist-magnitude"
+                                      type="number"
+                                      step="any"
+                                      defaultValue={newCarregamentoDistribuido.magnitude}
+                                      onChange={(e) => {
+                                        const val = e.target.valueAsNumber;
+                                        if (!isNaN(val)) {
+                                          setNewCarregamentoDistribuido({
+                                            ...newCarregamentoDistribuido,
+                                            magnitude: val
+                                          });
+                                        }
+                                      }}
+                                      className="h-8"
+                                    />
+                                  </div>
+                                </div>
+                                <Button onClick={addCarregamentoDistribuido} size="sm" className="w-full">
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Adicionar Carregamento Distribuído
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </SheetContent>
+                      </Sheet>
                     </div>
                   </div>
-                  <div className={styles.cardStyles.padding}>
-                    <TabsContent value="3d" className="mt-0 data-[state=inactive]:hidden" forceMount>
+                  <div>
+                    <TabsContent value="3d" className="!mt-0 data-[state=inactive]:hidden" forceMount>
                       <div className="w-full h-[400px] bg-muted/20 rounded-lg relative">
-                        <Beam3DViewer pilares={pilares} vigas={vigas} />
+                        <Beam3DViewer 
+                          pilares={pilares} 
+                          vigas={vigas} 
+                          carregamentosPontuais={carregamentosPontuais}
+                          carregamentosDistribuidos={carregamentosDistribuidos}
+                        />
                       </div>
                     </TabsContent>
                     
-                    <TabsContent value="2d" className="mt-0 data-[state=inactive]:hidden" forceMount>
-                      <div className="w-full bg-muted/10 rounded-lg overflow-hidden">
-                        <Beam2DViewer pilares={pilares} vigas={vigas} />
+                    <TabsContent value="2d" className="!mt-0 data-[state=inactive]:hidden" forceMount>
+                      <div className="w-full h-[400px] bg-muted/10 rounded-lg overflow-hidden">
+                        <Beam2DViewer 
+                          pilares={pilares} 
+                          vigas={vigas}
+                          carregamentosPontuais={carregamentosPontuais}
+                          carregamentosDistribuidos={carregamentosDistribuidos}
+                        />
                       </div>
                     </TabsContent>
                   </div>
@@ -499,6 +1054,21 @@ export default function FnsPage() {
                   </div>
                 </div>
 
+                {/* Card Armadura de Suspensão */}
+                <div className={styles.cardStyles.base + ' hover:shadow-md transition-shadow cursor-pointer'}>
+                  <div className={styles.cardStyles.padding}>
+                    <div className="flex items-start gap-3">
+                      <Link className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
+                      <div>
+                        <h3 className="text-sm font-semibold text-foreground mb-2">Armadura de Suspensão</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Dimensionamento de armadura para suspender cargas aplicadas próximas aos apoios.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Card Armadura de Ancoragem */}
                 <div className={styles.cardStyles.base + ' hover:shadow-md transition-shadow cursor-pointer'}>
                   <div className={styles.cardStyles.padding}>
@@ -529,25 +1099,19 @@ export default function FnsPage() {
                   </div>
                 </div>
               </div>
-
-              {/* Card de Informações */}
-              <div className={styles.cardStyles.base}>
-                <div className={styles.cardStyles.header}>
-                  <h3 className={styles.cardStyles.title}>Informações Importantes</h3>
-                </div>
-                <div className={styles.cardStyles.padding}>
-                  <ul className="space-y-2 text-xs text-muted-foreground">
-                    <li>• Os cálculos seguem as recomendações da NBR 6118:2023</li>
-                    <li>• Todos os dados de entrada devem estar nas unidades especificadas</li>
-                    <li>• Os resultados podem ser exportados em formato PDF através do menu lateral</li>
-                    <li>• Salve seus projetos regularmente para não perder os dados</li>
-                  </ul>
-                </div>
-              </div>
             </div>
           </main>
         </div>
       </div>
+      
+      {/* Footer Fixo */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-card border-t border-border py-2 px-4 z-40">
+        <div className="container mx-auto">
+          <p className="text-xs text-center text-muted-foreground">
+            Os cálculos seguem as recomendações da NBR 6118:2023
+          </p>
+        </div>
+      </footer>
     </SidebarProvider>
   );
 }

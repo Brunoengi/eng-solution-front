@@ -18,15 +18,33 @@ interface Viga {
   endPillarId?: string;
 }
 
+interface CarregamentoPontual {
+  id: string;
+  position: number;
+  magnitude: number;
+}
+
+interface CarregamentoDistribuido {
+  id: string;
+  startPosition: number;
+  endPosition: number;
+  magnitude: number;
+  vigaId?: string;
+}
+
 interface Beam2DViewerProps {
   pilares?: Pilar[];
   vigas?: Viga[];
+  carregamentosPontuais?: CarregamentoPontual[];
+  carregamentosDistribuidos?: CarregamentoDistribuido[];
   className?: string;
 }
 
 export function Beam2DViewer({ 
   pilares = [],
   vigas = [],
+  carregamentosPontuais = [],
+  carregamentosDistribuidos = [],
   className = '' 
 }: Beam2DViewerProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -92,6 +110,26 @@ export function Beam2DViewer({
   };
 
   const supportSize = 30;
+
+  // Paleta de cores distintas para carregamentos
+  const colorPalette = [
+    '#ff5722', // Vermelho-laranja
+    '#2196f3', // Azul
+    '#4caf50', // Verde
+    '#ff9800', // Laranja
+    '#9c27b0', // Roxo
+    '#00bcd4', // Ciano
+    '#ffeb3b', // Amarelo
+    '#e91e63', // Rosa
+    '#3f51b5', // Índigo
+    '#009688', // Teal
+    '#ff5252', // Vermelho
+    '#448aff', // Azul claro
+  ];
+
+  const getColor = (index: number) => {
+    return colorPalette[index % colorPalette.length];
+  };
 
   return (
     <div ref={containerRef} className={`w-full ${className}`}>
@@ -187,14 +225,14 @@ export function Beam2DViewer({
           const vigaEndX = worldToSVG(viga.endPosition);
           const vigaCenterX = (vigaStartX + vigaEndX) / 2;
           const vigaWorldLength = Math.abs(viga.endPosition - viga.startPosition);
-          const dimensionY = beamY - 35 - (index * 25); // Espaçamento vertical entre cotas
+          const dimensionY = beamY + 60; // Todas as cotas abaixo da viga
           
           return (
             <g key={`dim-${viga.id}`}>
               {/* Linhas de extensão */}
               <line
                 x1={vigaStartX}
-                y1={beamY - 5}
+                y1={beamY + 5}
                 x2={vigaStartX}
                 y2={dimensionY}
                 stroke="#999"
@@ -203,7 +241,7 @@ export function Beam2DViewer({
               />
               <line
                 x1={vigaEndX}
-                y1={beamY - 5}
+                y1={beamY + 5}
                 x2={vigaEndX}
                 y2={dimensionY}
                 stroke="#999"
@@ -234,13 +272,118 @@ export function Beam2DViewer({
               {/* Texto com a distância */}
               <text
                 x={vigaCenterX}
-                y={dimensionY - 5}
+                y={dimensionY + 15}
                 textAnchor="middle"
                 fontSize="12"
                 fill="#333"
                 fontWeight="600"
               >
                 {vigaWorldLength} cm
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Renderizar Carregamentos Pontuais */}
+        {carregamentosPontuais.map((carga, index) => {
+          const cargaX = worldToSVG(carga.position);
+          const arrowLength = 50; // Maior que distribuído
+          const isDown = carga.magnitude < 0;
+          const arrowStartY = isDown ? beamY - arrowLength : beamY + arrowLength;
+          const arrowEndY = isDown ? beamY - 5 : beamY + 5;
+          const color = getColor(index);
+          
+          return (
+            <g key={carga.id}>
+              {/* Seta do carregamento */}
+              <line
+                x1={cargaX}
+                y1={arrowStartY}
+                x2={cargaX}
+                y2={arrowEndY}
+                stroke={color}
+                strokeWidth="3"
+              />
+              {/* Ponta da seta */}
+              <polygon
+                points={isDown 
+                  ? `${cargaX},${arrowEndY} ${cargaX - 5},${arrowEndY - 8} ${cargaX + 5},${arrowEndY - 8}`
+                  : `${cargaX},${arrowEndY} ${cargaX - 5},${arrowEndY + 8} ${cargaX + 5},${arrowEndY + 8}`
+                }
+                fill={color}
+              />
+              {/* Label */}
+              <text
+                x={cargaX}
+                y={arrowStartY - (isDown ? 12 : -12)}
+                textAnchor="middle"
+                fontSize="11"
+                fill={color}
+                fontWeight="700"
+              >
+                {Math.abs(carga.magnitude)} kN
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Renderizar Carregamentos Distribuídos */}
+        {carregamentosDistribuidos.map((carga, index) => {
+          const cargaStartX = worldToSVG(carga.startPosition);
+          const cargaEndX = worldToSVG(carga.endPosition);
+          const cargaLength = Math.abs(cargaEndX - cargaStartX);
+          const numArrows = Math.max(3, Math.floor(cargaLength / 40));
+          const isDown = carga.magnitude < 0;
+          const arrowStartY = isDown ? beamY - 25 : beamY + 25;
+          const arrowEndY = isDown ? beamY - 5 : beamY + 5;
+          const color = getColor(carregamentosPontuais.length + index);
+          
+          return (
+            <g key={carga.id}>
+              {/* Linha superior do carregamento distribuído */}
+              <line
+                x1={cargaStartX}
+                y1={arrowStartY}
+                x2={cargaEndX}
+                y2={arrowStartY}
+                stroke={color}
+                strokeWidth="2"
+              />
+              
+              {/* Setas distribuídas */}
+              {Array.from({ length: numArrows }).map((_, i) => {
+                const arrowX = cargaStartX + (cargaLength * i) / (numArrows - 1);
+                return (
+                  <g key={`arrow-${i}`}>
+                    <line
+                      x1={arrowX}
+                      y1={arrowStartY}
+                      x2={arrowX}
+                      y2={arrowEndY}
+                      stroke={color}
+                      strokeWidth="2"
+                    />
+                    <polygon
+                      points={isDown 
+                        ? `${arrowX},${arrowEndY} ${arrowX - 3},${arrowEndY - 5} ${arrowX + 3},${arrowEndY - 5}`
+                        : `${arrowX},${arrowEndY} ${arrowX - 3},${arrowEndY + 5} ${arrowX + 3},${arrowEndY + 5}`
+                      }
+                      fill={color}
+                    />
+                  </g>
+                );
+              })}
+              
+              {/* Label */}
+              <text
+                x={(cargaStartX + cargaEndX) / 2}
+                y={arrowStartY - (isDown ? 8 : -8)}
+                textAnchor="middle"
+                fontSize="10"
+                fill={color}
+                fontWeight="600"
+              >
+                {Math.abs(carga.magnitude)} kN/m
               </text>
             </g>
           );

@@ -72,7 +72,7 @@ function SidebarToggleButton() {
   }
 
   return (
-    <div className="fixed left-0 top-4 z-40 p-2">
+    <div className="fixed left-0 top-4 z-[60] p-2">
       <div className="rounded-md border border-border bg-background">
         <SidebarToggle />
       </div>
@@ -90,14 +90,14 @@ function MenuItemComponent({ item }: { item: MenuItem }) {
       <Collapsible open={isOpen} onOpenChange={setIsOpen} asChild>
         <SidebarMenuItem>
           <CollapsibleTrigger asChild>
-            <SidebarMenuButton>
+            <SidebarMenuButton className="hover:bg-accent rounded-md">
               <Icon className="mr-2 h-4 w-4" />
-              <span>{item.label}</span>
+              <span className="text-sm">{item.label}</span>
               <ChevronDown className="ml-auto h-4 w-4 transition-transform duration-200" />
             </SidebarMenuButton>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <SidebarMenu className="border-l border-border pl-2">
+            <SidebarMenu className="border-l border-border pl-4 ml-2 mt-1 space-y-1">
               {item.items.map((subItem) => (
                 <MenuItemComponent key={subItem.label} item={subItem} />
               ))}
@@ -111,10 +111,10 @@ function MenuItemComponent({ item }: { item: MenuItem }) {
   // Se não tem subitens, renderiza como link
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton asChild>
+      <SidebarMenuButton asChild className="hover:bg-accent rounded-md">
         <Link href={item.href || '#'}>
           <Icon className="mr-2 h-4 w-4" />
-          <span>{item.label}</span>
+          <span className="text-sm">{item.label}</span>
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>
@@ -127,59 +127,64 @@ export function AppSidebar({ menuItems = [], configItems = [], exportItems = [],
   const defaultExportItems: MenuItem[] = exportItems.length > 0 ? exportItems : [];
 
   return (
-    <Sidebar>
-      <SidebarHeader>
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-bold text-foreground">Eng Solution</h1>
-          <SidebarToggle />
+    <Sidebar className="border-r shadow-lg">
+      <SidebarHeader className="border-b bg-card p-6">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <h1 className="text-lg font-semibold text-foreground">Eng Solution</h1>
+            <SidebarToggle />
+          </div>
+          <p className="text-sm text-muted-foreground">Sistema de cálculo estrutural</p>
         </div>
       </SidebarHeader>
 
-      <SidebarContent>
-        {defaultMenuItems.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>{menuGroupLabel}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {defaultMenuItems.map((item) => (
-                  <MenuItemComponent key={item.label} item={item} />
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+      <SidebarContent className="overflow-y-auto p-6">
+        <div className="space-y-6">
+          {defaultMenuItems.length > 0 && (
+            <SidebarGroup>
+              <SidebarGroupLabel className="text-sm font-semibold mb-3">{menuGroupLabel}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu className="space-y-1">
+                  {defaultMenuItems.map((item) => (
+                    <MenuItemComponent key={item.label} item={item} />
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
 
-        {defaultExportItems.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>{exportGroupLabel}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {defaultExportItems.map((item) => (
-                  <MenuItemComponent key={item.label} item={item} />
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+          {defaultExportItems.length > 0 && (
+            <SidebarGroup>
+              <SidebarGroupLabel className="text-sm font-semibold mb-3">{exportGroupLabel}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu className="space-y-1">
+                  {defaultExportItems.map((item) => (
+                    <MenuItemComponent key={item.label} item={item} />
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
 
-        {defaultConfigItems.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>{configGroupLabel}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {defaultConfigItems.map((item) => (
-                  <MenuItemComponent key={item.label} item={item} />
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+          {defaultConfigItems.length > 0 && (
+            <SidebarGroup>
+              <SidebarGroupLabel className="text-sm font-semibold mb-3">{configGroupLabel}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu className="space-y-1">
+                  {defaultConfigItems.map((item) => (
+                    <MenuItemComponent key={item.label} item={item} />
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
+        </div>
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className="border-t bg-card p-6 mt-auto">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild>
+            <SidebarMenuButton asChild className="hover:bg-accent">
               <Link href="/logout">
                 <LogOut className="mr-2 h-4 w-4" />
                 <span>Sair</span>
