@@ -21,6 +21,8 @@ import {
   HelpCircle,
   FileText,
   Download,
+  Home,
+  Link,
 } from 'lucide-react';
 import * as styles from '@/styles/fns-styles';
 
@@ -47,14 +49,20 @@ export default function LongitudinalPage() {
     gammaf: 1.4,
   });
 
-  // Menu items - Dimensionamento
+  // Menu items - Seção Principal
   const menuItems: MenuItem[] = [
+    {
+      label: 'Elementos e Carregamentos',
+      href: '/dashboard/fns',
+      icon: Home,
+    },
     {
       label: 'Dimensionamento',
       icon: Layers,
       items: [
         { label: 'Armadura Longitudinal', href: '/dashboard/fns/longitudinal', icon: ArrowUpDown },
         { label: 'Armadura Transversal', href: '/dashboard/fns/transversal', icon: Square },
+        { label: 'Armadura de Suspensão', href: '/dashboard/fns/suspensao', icon: Link },
         { label: 'Armadura de Ancoragem', href: '/dashboard/fns/ancoragem', icon: Anchor },
         { label: 'Armadura de Pele', href: '/dashboard/fns/pele', icon: Layers },
       ],

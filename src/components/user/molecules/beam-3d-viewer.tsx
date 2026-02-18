@@ -77,6 +77,11 @@ export function Beam3DViewer({
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Limpar qualquer canvas existente no container
+    while (containerRef.current.firstChild) {
+      containerRef.current.removeChild(containerRef.current.firstChild);
+    }
+
     // Scene
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf3f4f6);
@@ -444,8 +449,16 @@ export function Beam3DViewer({
     renderer.domElement.addEventListener('mousemove', onMouseMove);
 
     // Grid Helper
-    const gridHelper = new THREE.GridHelper(structureSize * 1.5, 20, 0xcccccc, 0xe0e0e0);
-    gridHelper.position.y = -maxHeight / 2 - 10;
+    // Calcular a cota inferior dos pilares
+    // Pilar: altura = maxHeight * 1.5, posição Y = -maxHeight * 0.25
+    // Cota inferior = posição Y - (altura / 2) = -maxHeight * 0.25 - maxHeight * 0.75 = -maxHeight * 1.0
+    const pilarBaseY = -maxHeight * 1.0;
+    
+    // Aumentar a extensão do grid no eixo X para cobrir mais área
+    const structureWidth = maxPos - minPos;
+    const gridSize = Math.max(structureWidth * 2.5, structureSize * 5, 500);
+    const gridHelper = new THREE.GridHelper(gridSize, 40, 0xcccccc, 0xe0e0e0);
+    gridHelper.position.y = pilarBaseY - 2; // 2 cm abaixo da base do pilar
     scene.add(gridHelper);
 
     // Animation loop
@@ -480,23 +493,24 @@ export function Beam3DViewer({
     return () => {
       window.removeEventListener('resize', handleResize);
       
-      if (rendererRef.current) {
-        rendererRef.current.domElement.removeEventListener('mousemove', onMouseMove);
-      }
-      
+      // Cancel animation frame
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = undefined;
       }
 
+      // Remove event listener from renderer
+      if (rendererRef.current?.domElement) {
+        rendererRef.current.domElement.removeEventListener('mousemove', onMouseMove);
+      }
+
+      // Dispose controls
       if (controlsRef.current) {
         controlsRef.current.dispose();
+        controlsRef.current = null;
       }
 
-      if (rendererRef.current && containerRef.current) {
-        containerRef.current.removeChild(rendererRef.current.domElement);
-        rendererRef.current.dispose();
-      }
-
+      // Dispose scene objects
       if (sceneRef.current) {
         sceneRef.current.traverse((object) => {
           if (object instanceof THREE.Mesh) {
@@ -506,7 +520,20 @@ export function Beam3DViewer({
             }
           }
         });
+        sceneRef.current = null;
       }
+
+      // Remove and dispose renderer
+      if (rendererRef.current) {
+        if (containerRef.current && rendererRef.current.domElement.parentElement === containerRef.current) {
+          containerRef.current.removeChild(rendererRef.current.domElement);
+        }
+        rendererRef.current.dispose();
+        rendererRef.current = null;
+      }
+
+      // Clear camera ref
+      cameraRef.current = null;
     };
   }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
 

@@ -532,8 +532,8 @@ export default function FnsPage() {
           </div>
 
           {/* Conteúdo */}
-          <main className="container mx-auto px-4 pb-16 md:px-6 md:pb-20 lg:px-8 lg:pb-24">
-            <div className="flex flex-col gap-6">
+          <main className="container mx-auto px-4 md:px-6 lg:px-8 h-[calc(100vh-120px)] flex items-center justify-center">
+            <div className="w-full max-w-7xl">
               {/* Visualizador da Viga com Abas 2D/3D */}
               <Tabs defaultValue="3d" className="w-full">
                 <div className={styles.cardStyles.base}>
@@ -998,7 +998,7 @@ export default function FnsPage() {
                   </div>
                   <div>
                     <TabsContent value="3d" className="!mt-0 data-[state=inactive]:hidden" forceMount>
-                      <div className="w-full h-[400px] bg-muted/20 rounded-lg relative">
+                      <div className="w-full h-[60vh] bg-muted/20 rounded-lg relative flex items-center justify-center">
                         <Beam3DViewer 
                           pilares={pilares} 
                           vigas={vigas} 
@@ -1009,7 +1009,7 @@ export default function FnsPage() {
                     </TabsContent>
                     
                     <TabsContent value="2d" className="!mt-0 data-[state=inactive]:hidden" forceMount>
-                      <div className="w-full h-[400px] bg-muted/10 rounded-lg overflow-hidden">
+                      <div className="w-full h-[60vh] bg-muted/10 rounded-lg overflow-hidden flex items-center justify-center">
                         <Beam2DViewer 
                           pilares={pilares} 
                           vigas={vigas}
@@ -1021,84 +1021,6 @@ export default function FnsPage() {
                   </div>
                 </div>
               </Tabs>
-
-              {/* Grid de Cards de Funcionalidades */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Card Armadura Longitudinal */}
-                <div className={styles.cardStyles.base + ' hover:shadow-md transition-shadow cursor-pointer'}>
-                  <div className={styles.cardStyles.padding}>
-                    <div className="flex items-start gap-3">
-                      <ArrowUpDown className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
-                      <div>
-                        <h3 className="text-sm font-semibold text-foreground mb-2">Armadura Longitudinal</h3>
-                        <p className="text-xs text-muted-foreground">
-                          Cálculo da armadura longitudinal necessária para resistir aos momentos fletores.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Armadura Transversal */}
-                <div className={styles.cardStyles.base + ' hover:shadow-md transition-shadow cursor-pointer'}>
-                  <div className={styles.cardStyles.padding}>
-                    <div className="flex items-start gap-3">
-                      <Square className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
-                      <div>
-                        <h3 className="text-sm font-semibold text-foreground mb-2">Armadura Transversal</h3>
-                        <p className="text-xs text-muted-foreground">
-                          Dimensionamento de estribos para resistir aos esforços cortantes.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Armadura de Suspensão */}
-                <div className={styles.cardStyles.base + ' hover:shadow-md transition-shadow cursor-pointer'}>
-                  <div className={styles.cardStyles.padding}>
-                    <div className="flex items-start gap-3">
-                      <Link className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
-                      <div>
-                        <h3 className="text-sm font-semibold text-foreground mb-2">Armadura de Suspensão</h3>
-                        <p className="text-xs text-muted-foreground">
-                          Dimensionamento de armadura para suspender cargas aplicadas próximas aos apoios.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Armadura de Ancoragem */}
-                <div className={styles.cardStyles.base + ' hover:shadow-md transition-shadow cursor-pointer'}>
-                  <div className={styles.cardStyles.padding}>
-                    <div className="flex items-start gap-3">
-                      <Anchor className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
-                      <div>
-                        <h3 className="text-sm font-semibold text-foreground mb-2">Armadura de Ancoragem</h3>
-                        <p className="text-xs text-muted-foreground">
-                          Cálculo dos comprimentos de ancoragem das barras de aço.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Armadura de Pele */}
-                <div className={styles.cardStyles.base + ' hover:shadow-md transition-shadow cursor-pointer'}>
-                  <div className={styles.cardStyles.padding}>
-                    <div className="flex items-start gap-3">
-                      <Layers className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
-                      <div>
-                        <h3 className="text-sm font-semibold text-foreground mb-2">Armadura de Pele</h3>
-                        <p className="text-xs text-muted-foreground">
-                          Armadura complementar para controle de fissuração em vigas altas.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           </main>
         </div>
