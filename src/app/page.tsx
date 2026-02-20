@@ -1,5 +1,6 @@
 import { Header } from '../components/user/layout/header';
 import { GridContainer, GridLayout, GridItem } from '../components/user/layout/grid-layout';
+import { Button } from '@/components/ui/button';
 
 export default function Home() {
   return (
@@ -14,6 +15,7 @@ export default function Home() {
             <p className="text-lg text-muted-foreground">
               Sua plataforma de soluções de engenharia
             </p>
+            <Button className="mt-4">Calcular esforços solicitantes</Button>
           </div>
 
           <GridLayout>

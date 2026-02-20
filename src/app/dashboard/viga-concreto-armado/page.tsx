@@ -61,24 +61,24 @@ export default function FnsPage() {
   const menuItems: MenuItem[] = [
     {
       label: 'Elementos e Carregamentos',
-      href: '/dashboard/fns',
+      href: '/dashboard/viga-concreto-armado',
       icon: Home,
     },
     {
       label: 'Dimensionamento',
       icon: Layers,
       items: [
-        { label: 'Armadura Longitudinal', href: '/dashboard/fns/longitudinal', icon: ArrowUpDown },
-        { label: 'Armadura Transversal', href: '/dashboard/fns/transversal', icon: Square },
-        { label: 'Armadura de Suspensão', href: '/dashboard/fns/suspensao', icon: Link },
-        { label: 'Armadura de Ancoragem', href: '/dashboard/fns/ancoragem', icon: Anchor },
-        { label: 'Armadura de Pele', href: '/dashboard/fns/pele', icon: Layers },
+        { label: 'Armadura Longitudinal', href: '/dashboard/viga-concreto-armado/longitudinal', icon: ArrowUpDown },
+        { label: 'Armadura Transversal', href: '/dashboard/viga-concreto-armado/transversal', icon: Square },
+        { label: 'Armadura de Suspensão', href: '/dashboard/viga-concreto-armado/suspensao', icon: Link },
+        { label: 'Armadura de Ancoragem', href: '/dashboard/viga-concreto-armado/ancoragem', icon: Anchor },
+        { label: 'Armadura de Pele', href: '/dashboard/viga-concreto-armado/pele', icon: Layers },
       ],
     },
   ];
 
   const exportItems: MenuItem[] = [
-    { label: 'Memorial de Cálculo', href: '/dashboard/fns/memorial-pdf', icon: FileText },
+    { label: 'Memorial de Cálculo', href: '/dashboard/viga-concreto-armado/memorial-pdf', icon: FileText },
   ];
 
   const configItems: MenuItem[] = [
@@ -133,6 +133,8 @@ export default function FnsPage() {
     tipoDefinicao: 'viga' as 'posicao' | 'viga',
     vigaId: ''
   });
+  const [isProcessingStructure, setIsProcessingStructure] = useState(false);
+  const [processingStructureMessage, setProcessingStructureMessage] = useState<string | null>(null);
 
   // Função para verificar se há balanço bloqueando posição
   const getPilaresComBalanco = () => {
@@ -503,6 +505,134 @@ export default function FnsPage() {
     setCarregamentosDistribuidos(carregamentosDistribuidos.filter(c => c.id !== id));
   };
 
+  const processarEstrutura = async () => {
+    setIsProcessingStructure(true);
+    setProcessingStructureMessage(null);
+
+    const apiBaseUrl = process.env.NEXT_PUBLIC_ESTRUTURA_API_URL ?? '';
+    const apiPath = process.env.NEXT_PUBLIC_ESTRUTURA_API_PATH ?? '/api/beam2d/system';
+
+    const eModulo = Number(process.env.NEXT_PUBLIC_BEAM_E ?? 210_000_000_000);
+
+    const nodePositions = Array.from(
+      new Set(vigas.flatMap((viga) => [viga.startPosition, viga.endPosition]))
+    ).sort((a, b) => a - b);
+
+    const hasPilarAtPosition = new Set(pilares.map((pilar) => pilar.position));
+    const firstSupportPosition = nodePositions.find((position) => hasPilarAtPosition.has(position));
+
+    const nodeDataByPosition = new Map<number, {
+      label: string;
+      actions: { fx?: number; fy?: number; mz?: number };
+      displacements: { ux?: number; uy?: number; rz?: number };
+    }>();
+
+    nodePositions.forEach((position, index) => {
+      const fy = carregamentosPontuais
+        .filter((carga) => carga.position === position)
+        .reduce((acc, carga) => acc + Number(carga.magnitude || 0), 0);
+
+      const displacements: { ux?: number; uy?: number; rz?: number } = {};
+      if (hasPilarAtPosition.has(position)) {
+        displacements.uy = 0;
+      }
+      if (position === firstSupportPosition) {
+        displacements.ux = 0;
+      }
+
+      nodeDataByPosition.set(position, {
+        label: `N${index + 1}`,
+        actions: { fx: 0, fy, mz: 0 },
+        displacements,
+      });
+    });
+
+    const elementsPayload = vigas
+      .filter((viga) => viga.startPosition !== viga.endPosition)
+      .map((viga) => {
+        const b = viga.width / 100;
+        const h = viga.height / 100;
+
+        const cargasDistribuidasDaViga = carregamentosDistribuidos.filter((carga) =>
+          carga.vigaId === viga.id
+          || (
+            carga.startPosition >= Math.min(viga.startPosition, viga.endPosition)
+            && carga.endPosition <= Math.max(viga.startPosition, viga.endPosition)
+          )
+        );
+
+        const q = cargasDistribuidasDaViga.reduce((acc, carga) => acc + Number(carga.magnitude || 0), 0);
+
+        return {
+          node_i: {
+            x: viga.startPosition / 100,
+            y: 0,
+            label: nodeDataByPosition.get(viga.startPosition)?.label ?? 'Ni',
+            actions: nodeDataByPosition.get(viga.startPosition)?.actions ?? {},
+            displacements: nodeDataByPosition.get(viga.startPosition)?.displacements ?? {},
+          },
+          node_j: {
+            x: viga.endPosition / 100,
+            y: 0,
+            label: nodeDataByPosition.get(viga.endPosition)?.label ?? 'Nj',
+            actions: nodeDataByPosition.get(viga.endPosition)?.actions ?? {},
+            displacements: nodeDataByPosition.get(viga.endPosition)?.displacements ?? {},
+          },
+          E: eModulo,
+          A: b * h,
+          I: (b * Math.pow(h, 3)) / 12,
+          q,
+          label: viga.id,
+        };
+      });
+
+    if (elementsPayload.length === 0) {
+      setProcessingStructureMessage('Nenhuma viga válida para processar (comprimento zero).');
+      setIsProcessingStructure(false);
+      return;
+    }
+
+    try {
+      console.log('Payload /beam2d/system:', { Elements: elementsPayload });
+
+      const response = await fetch(`${apiBaseUrl}${apiPath}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          Elements: elementsPayload,
+        }),
+      });
+
+      const responseText = await response.text();
+      let responseData: unknown = responseText;
+
+      try {
+        responseData = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        responseData = responseText;
+      }
+
+      console.log('Resposta /beam2d/system:', responseData);
+
+      if (!response.ok) {
+        const errorDetails = typeof responseData === 'string'
+          ? responseData
+          : JSON.stringify(responseData);
+
+        throw new Error(`Falha ao processar estrutura (HTTP ${response.status}): ${errorDetails}`);
+      }
+
+      setProcessingStructureMessage('Estrutura processada com sucesso.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro desconhecido ao processar estrutura.';
+      setProcessingStructureMessage(message);
+    } finally {
+      setIsProcessingStructure(false);
+    }
+  };
+
   return (
     <SidebarProvider defaultOpen={false}>
       <SidebarToggleButton />
@@ -528,6 +658,12 @@ export default function FnsPage() {
               <p className={styles.headerStyles.subtitle + ' ' + styles.fontSizesResponsive.subtitle}>
                 Flexão Normal Simples - Sistema de cálculo estrutural
               </p>
+              <Button className="mt-4" onClick={processarEstrutura} disabled={isProcessingStructure}>
+                {isProcessingStructure ? 'Processando...' : 'Processar estrutura'}
+              </Button>
+              {processingStructureMessage && (
+                <p className="mt-2 text-sm text-muted-foreground">{processingStructureMessage}</p>
+              )}
             </div>
           </div>
 

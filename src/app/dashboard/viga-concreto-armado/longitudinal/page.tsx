@@ -53,24 +53,24 @@ export default function LongitudinalPage() {
   const menuItems: MenuItem[] = [
     {
       label: 'Elementos e Carregamentos',
-      href: '/dashboard/fns',
+      href: '/dashboard/viga-concreto-armado',
       icon: Home,
     },
     {
       label: 'Dimensionamento',
       icon: Layers,
       items: [
-        { label: 'Armadura Longitudinal', href: '/dashboard/fns/longitudinal', icon: ArrowUpDown },
-        { label: 'Armadura Transversal', href: '/dashboard/fns/transversal', icon: Square },
-        { label: 'Armadura de Suspensão', href: '/dashboard/fns/suspensao', icon: Link },
-        { label: 'Armadura de Ancoragem', href: '/dashboard/fns/ancoragem', icon: Anchor },
-        { label: 'Armadura de Pele', href: '/dashboard/fns/pele', icon: Layers },
+        { label: 'Armadura Longitudinal', href: '/dashboard/viga-concreto-armado/longitudinal', icon: ArrowUpDown },
+        { label: 'Armadura Transversal', href: '/dashboard/viga-concreto-armado/transversal', icon: Square },
+        { label: 'Armadura de Suspensão', href: '/dashboard/viga-concreto-armado/suspensao', icon: Link },
+        { label: 'Armadura de Ancoragem', href: '/dashboard/viga-concreto-armado/ancoragem', icon: Anchor },
+        { label: 'Armadura de Pele', href: '/dashboard/viga-concreto-armado/pele', icon: Layers },
       ],
     },
   ];
 
   const exportItems: MenuItem[] = [
-    { label: 'Memorial de Cálculo', href: '/dashboard/fns/memorial-pdf', icon: FileText },
+    { label: 'Memorial de Cálculo', href: '/dashboard/viga-concreto-armado/memorial-pdf', icon: FileText },
   ];
 
   const configItems: MenuItem[] = [
