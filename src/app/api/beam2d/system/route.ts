@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
-  const apiBaseUrl = process.env.ESTRUTURA_API_URL ?? 'http://localhost:3000';
+  const apiBaseUrl = process.env.ESTRUTURA_API_URL ?? 'http://localhost:3001';
   const apiPath = process.env.ESTRUTURA_API_PATH ?? '/beam2d/system';
 
   try {

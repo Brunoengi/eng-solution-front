@@ -43,11 +43,170 @@ interface CarregamentoDistribuido {
   vigaId?: string;
 }
 
+interface PontoDiagrama {
+  x: number;
+  valor: number;
+}
+
+type TipoDiagrama = 'esforcoCortante' | 'momentoFletor';
+
+const normalizeKey = (key: string) => key.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+const keyMatches = (key: string, aliases: string[]) => {
+  const normalized = normalizeKey(key);
+  return aliases.some((alias) => normalized.includes(alias));
+};
+
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+};
+
+const extractPointsFromUnknown = (input: unknown): PontoDiagrama[] => {
+  if (!Array.isArray(input)) return [];
+
+  const points: PontoDiagrama[] = [];
+
+  input.forEach((item) => {
+    if (Array.isArray(item) && item.length >= 2) {
+      const x = toNumber(item[0]);
+      const valor = toNumber(item[1]);
+      if (x !== null && valor !== null) {
+        points.push({ x, valor });
+      }
+      return;
+    }
+
+    if (item && typeof item === 'object') {
+      const obj = item as Record<string, unknown>;
+      const x = toNumber(obj.x ?? obj.X ?? obj.posicao ?? obj.position);
+
+      const valor = toNumber(
+        obj.valor
+        ?? obj.value
+        ?? obj.y
+        ?? obj.Y
+        ?? obj.v
+        ?? obj.m
+        ?? obj.delta
+        ?? obj.theta
+        ?? obj.uy
+        ?? obj.rz
+      );
+
+      if (x !== null && valor !== null) {
+        points.push({ x, valor });
+      }
+    }
+  });
+
+  return points.sort((a, b) => a.x - b.x);
+};
+
+const extractPointsFromObject = (input: unknown): PontoDiagrama[] => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return [];
+
+  const obj = input as Record<string, unknown>;
+  const xs = obj.x ?? obj.X ?? obj.posicoes ?? obj.positions;
+  const ys = obj.y ?? obj.Y ?? obj.valores ?? obj.values ?? obj.v ?? obj.m;
+
+  if (!Array.isArray(xs) || !Array.isArray(ys) || xs.length !== ys.length) return [];
+
+  const points: PontoDiagrama[] = [];
+  for (let i = 0; i < xs.length; i++) {
+    const x = toNumber(xs[i]);
+    const valor = toNumber(ys[i]);
+    if (x !== null && valor !== null) points.push({ x, valor });
+  }
+
+  return points.sort((a, b) => a.x - b.x);
+};
+
+const zipXWithValues = (xValues: unknown, yValues: unknown): PontoDiagrama[] => {
+  if (!Array.isArray(xValues) || !Array.isArray(yValues) || xValues.length !== yValues.length) return [];
+
+  const points: PontoDiagrama[] = [];
+  for (let i = 0; i < xValues.length; i++) {
+    const x = toNumber(xValues[i]);
+    const valor = toNumber(yValues[i]);
+    if (x !== null && valor !== null) points.push({ x, valor });
+  }
+
+  return points.sort((a, b) => a.x - b.x);
+};
+
+const getArrayFromCandidates = (obj: Record<string, unknown>, candidates: string[]): unknown[] | null => {
+  for (const key of candidates) {
+    const value = obj[key];
+    if (Array.isArray(value)) return value;
+  }
+  return null;
+};
+
+const findDiagramPoints = (source: unknown, aliases: string[]): PontoDiagrama[] => {
+  if (!source || typeof source !== 'object') return [];
+
+  const queue: unknown[] = [source];
+  const visited = new Set<unknown>();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object' || visited.has(current)) continue;
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      const points = extractPointsFromUnknown(current);
+      if (points.length > 0) return points;
+
+      current.forEach((item) => {
+        if (item && typeof item === 'object') queue.push(item);
+      });
+      continue;
+    }
+
+    const entries = Object.entries(current as Record<string, unknown>);
+
+    for (const [key, value] of entries) {
+      if (keyMatches(key, aliases)) {
+        const directPoints = extractPointsFromUnknown(value);
+        if (directPoints.length > 0) return directPoints;
+
+        const objectWithXYPoints = zipXWithValues(
+          (current as Record<string, unknown>).x ?? (current as Record<string, unknown>).X,
+          value,
+        );
+        if (objectWithXYPoints.length > 0) return objectWithXYPoints;
+
+        const objectPoints = extractPointsFromObject(value);
+        if (objectPoints.length > 0) return objectPoints;
+
+        if (value && typeof value === 'object') {
+          const nestedPoints = findDiagramPoints(value, aliases);
+          if (nestedPoints.length > 0) return nestedPoints;
+        }
+      }
+
+      if (value && typeof value === 'object') {
+        queue.push(value);
+      }
+    }
+  }
+
+  return [];
+};
+
 interface Beam3DViewerProps {
   pilares?: Pilar[];
   vigas?: Viga[];
   carregamentosPontuais?: CarregamentoPontual[];
   carregamentosDistribuidos?: CarregamentoDistribuido[];
+  exibirDiagramas?: boolean;
+  diagramaAtivo?: TipoDiagrama;
+  resultadoProcessamento?: unknown;
   className?: string;
 }
 
@@ -56,6 +215,9 @@ export function Beam3DViewer({
   vigas = [],
   carregamentosPontuais = [],
   carregamentosDistribuidos = [],
+  exibirDiagramas = false,
+  diagramaAtivo = 'esforcoCortante',
+  resultadoProcessamento = null,
   className = '' 
 }: Beam3DViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -250,108 +412,27 @@ export function Beam3DViewer({
       return sprite;
     };
 
-    // Renderizar Carregamentos Pontuais
-    carregamentosPontuais.forEach((carga, index) => {
-      const isDown = carga.magnitude < 0;
-      const arrowLength = maxHeight * 0.8;
-      const arrowHeadLength = maxHeight * 0.2;
-      const arrowHeadWidth = maxHeight * 0.15;
-      
-      // Cor única para este carregamento
-      const color = getColor(index);
-      
-      // Posição de aplicação na viga (topo ou base)
-      const applicationY = isDown ? maxHeight / 2 : -maxHeight / 2;
-      const startY = isDown ? maxHeight / 2 + arrowLength + arrowHeadLength : -maxHeight / 2 - arrowLength - arrowHeadLength;
-      
-      // Criar seta usando ArrowHelper
-      const direction = new THREE.Vector3(0, isDown ? -1 : 1, 0);
-      const origin = new THREE.Vector3(carga.position, startY, 0);
-      
-      const arrow = new THREE.ArrowHelper(
-        direction,
-        origin,
-        arrowLength,
-        color.hex,
-        arrowHeadLength,
-        arrowHeadWidth
-      );
-      
-      // Linha pontilhada conectando a seta ao ponto de aplicação
-      const points = [
-        new THREE.Vector3(carga.position, startY, 0),
-        new THREE.Vector3(carga.position, applicationY, 0)
-      ];
-      const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-      const lineMaterial = new THREE.LineDashedMaterial({
-        color: color.hex,
-        dashSize: 2,
-        gapSize: 1,
-        linewidth: 2
-      });
-      const line = new THREE.Line(lineGeometry, lineMaterial);
-      line.computeLineDistances();
-      
-      scene.add(arrow);
-      scene.add(line);
-      
-      // Pequena esfera no ponto de aplicação
-      const sphereGeometry = new THREE.SphereGeometry(maxHeight * 0.08, 8, 8);
-      const sphereMaterial = new THREE.MeshStandardMaterial({
-        color: color.hex,
-        roughness: 0.3,
-        metalness: 0.5
-      });
-      const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-      sphere.position.set(carga.position, applicationY, 0);
-      scene.add(sphere);
+    let diagramHoverConfig: {
+      points: PontoDiagrama[];
+      unit: string;
+      displayFactor: number;
+      signFactor: number;
+      label: string;
+    } | null = null;
 
-      // Label com o valor do carregamento
-      const labelText = `${Math.abs(carga.magnitude)} kN`;
-      const label = createTextSprite(labelText, color.rgb, 48);
-      if (label) {
-        const labelOffsetY = isDown ? startY + maxHeight * 0.7 : startY - maxHeight * 0.7;
-        label.position.set(carga.position, labelOffsetY, 0);
-        scene.add(label);
-      }
-    });
-
-    // Renderizar Carregamentos Distribuídos
-    carregamentosDistribuidos.forEach((carga, index) => {
-      const isDown = carga.magnitude < 0;
-      const distLength = Math.abs(carga.endPosition - carga.startPosition);
-      const numArrows = Math.max(4, Math.floor(distLength / 25));
-      const arrowLength = maxHeight * 0.6;
-      const arrowHeadLength = maxHeight * 0.15;
-      const arrowHeadWidth = maxHeight * 0.12;
-      
-      // Cor única para este carregamento (continua a partir dos pontuais)
-      const color = getColor(carregamentosPontuais.length + index);
-      
-      // Posição de aplicação na viga
-      const applicationY = isDown ? maxHeight / 2 : -maxHeight / 2;
-      const startY = isDown ? maxHeight / 2 + arrowLength + arrowHeadLength : -maxHeight / 2 - arrowLength - arrowHeadLength;
-      
-      // Linha horizontal conectando todas as setas
-      const horizontalPoints = [
-        new THREE.Vector3(carga.startPosition, startY, 0),
-        new THREE.Vector3(carga.endPosition, startY, 0)
-      ];
-      const horizontalGeometry = new THREE.BufferGeometry().setFromPoints(horizontalPoints);
-      const horizontalMaterial = new THREE.LineBasicMaterial({
-        color: color.hex,
-        linewidth: 3
-      });
-      const horizontalLine = new THREE.Line(horizontalGeometry, horizontalMaterial);
-      scene.add(horizontalLine);
-      
-      // Setas distribuídas
-      for (let i = 0; i < numArrows; i++) {
-        const posX = carga.startPosition + (distLength * i) / (numArrows - 1);
+    if (!exibirDiagramas) {
+      // Renderizar Carregamentos Pontuais
+      carregamentosPontuais.forEach((carga, index) => {
+        const isDown = carga.magnitude < 0;
+        const arrowLength = maxHeight * 0.8;
+        const arrowHeadLength = maxHeight * 0.2;
+        const arrowHeadWidth = maxHeight * 0.15;
         
-        // Criar seta usando ArrowHelper
+        const color = getColor(index);
+        const applicationY = isDown ? maxHeight / 2 : -maxHeight / 2;
+        const startY = isDown ? maxHeight / 2 + arrowLength + arrowHeadLength : -maxHeight / 2 - arrowLength - arrowHeadLength;
         const direction = new THREE.Vector3(0, isDown ? -1 : 1, 0);
-        const origin = new THREE.Vector3(posX, startY, 0);
+        const origin = new THREE.Vector3(carga.position, startY, 0);
         
         const arrow = new THREE.ArrowHelper(
           direction,
@@ -362,51 +443,345 @@ export function Beam3DViewer({
           arrowHeadWidth
         );
         
+        const points = [
+          new THREE.Vector3(carga.position, startY, 0),
+          new THREE.Vector3(carga.position, applicationY, 0)
+        ];
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+        const lineMaterial = new THREE.LineDashedMaterial({
+          color: color.hex,
+          dashSize: 2,
+          gapSize: 1,
+          linewidth: 2
+        });
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        line.computeLineDistances();
+        
         scene.add(arrow);
-      }
-      
-      // Linhas verticais nas extremidades conectando à viga
-      const leftLinePoints = [
-        new THREE.Vector3(carga.startPosition, startY, 0),
-        new THREE.Vector3(carga.startPosition, applicationY, 0)
-      ];
-      const rightLinePoints = [
-        new THREE.Vector3(carga.endPosition, startY, 0),
-        new THREE.Vector3(carga.endPosition, applicationY, 0)
-      ];
-      
-      const extremityLineMaterial = new THREE.LineDashedMaterial({
-        color: color.hex,
-        dashSize: 2,
-        gapSize: 1,
-        linewidth: 2
-      });
-      
-      const leftLine = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(leftLinePoints),
-        extremityLineMaterial
-      );
-      leftLine.computeLineDistances();
-      
-      const rightLine = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(rightLinePoints),
-        extremityLineMaterial
-      );
-      rightLine.computeLineDistances();
-      
-      scene.add(leftLine);
-      scene.add(rightLine);
+        scene.add(line);
+        
+        const sphereGeometry = new THREE.SphereGeometry(maxHeight * 0.08, 8, 8);
+        const sphereMaterial = new THREE.MeshStandardMaterial({
+          color: color.hex,
+          roughness: 0.3,
+          metalness: 0.5
+        });
+        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        sphere.position.set(carga.position, applicationY, 0);
+        scene.add(sphere);
 
-      // Label com o valor do carregamento distribuído
-      const labelText = `${Math.abs(carga.magnitude)} kN/m`;
-      const label = createTextSprite(labelText, color.rgb, 48);
-      if (label) {
-        const centerX = (carga.startPosition + carga.endPosition) / 2;
-        const labelOffsetY = isDown ? startY + maxHeight * 0.4 : startY - maxHeight * 0.4;
-        label.position.set(centerX, labelOffsetY, 0);
-        scene.add(label);
+        const labelText = `${Math.abs(carga.magnitude)} kN`;
+        const label = createTextSprite(labelText, color.rgb, 48);
+        if (label) {
+          const labelOffsetY = isDown ? startY + maxHeight * 0.7 : startY - maxHeight * 0.7;
+          label.position.set(carga.position, labelOffsetY, 0);
+          scene.add(label);
+        }
+      });
+
+      // Renderizar Carregamentos Distribuídos
+      carregamentosDistribuidos.forEach((carga, index) => {
+        const isDown = carga.magnitude < 0;
+        const distLength = Math.abs(carga.endPosition - carga.startPosition);
+        const numArrows = Math.max(4, Math.floor(distLength / 25));
+        const arrowLength = maxHeight * 0.6;
+        const arrowHeadLength = maxHeight * 0.15;
+        const arrowHeadWidth = maxHeight * 0.12;
+        const color = getColor(carregamentosPontuais.length + index);
+        const applicationY = isDown ? maxHeight / 2 : -maxHeight / 2;
+        const startY = isDown ? maxHeight / 2 + arrowLength + arrowHeadLength : -maxHeight / 2 - arrowLength - arrowHeadLength;
+        
+        const horizontalPoints = [
+          new THREE.Vector3(carga.startPosition, startY, 0),
+          new THREE.Vector3(carga.endPosition, startY, 0)
+        ];
+        const horizontalGeometry = new THREE.BufferGeometry().setFromPoints(horizontalPoints);
+        const horizontalMaterial = new THREE.LineBasicMaterial({
+          color: color.hex,
+          linewidth: 3
+        });
+        const horizontalLine = new THREE.Line(horizontalGeometry, horizontalMaterial);
+        scene.add(horizontalLine);
+        
+        for (let i = 0; i < numArrows; i++) {
+          const posX = carga.startPosition + (distLength * i) / (numArrows - 1);
+          const direction = new THREE.Vector3(0, isDown ? -1 : 1, 0);
+          const origin = new THREE.Vector3(posX, startY, 0);
+          
+          const arrow = new THREE.ArrowHelper(
+            direction,
+            origin,
+            arrowLength,
+            color.hex,
+            arrowHeadLength,
+            arrowHeadWidth
+          );
+          
+          scene.add(arrow);
+        }
+        
+        const leftLinePoints = [
+          new THREE.Vector3(carga.startPosition, startY, 0),
+          new THREE.Vector3(carga.startPosition, applicationY, 0)
+        ];
+        const rightLinePoints = [
+          new THREE.Vector3(carga.endPosition, startY, 0),
+          new THREE.Vector3(carga.endPosition, applicationY, 0)
+        ];
+        
+        const extremityLineMaterial = new THREE.LineDashedMaterial({
+          color: color.hex,
+          dashSize: 2,
+          gapSize: 1,
+          linewidth: 2
+        });
+        
+        const leftLine = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(leftLinePoints),
+          extremityLineMaterial
+        );
+        leftLine.computeLineDistances();
+        
+        const rightLine = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(rightLinePoints),
+          extremityLineMaterial
+        );
+        rightLine.computeLineDistances();
+        
+        scene.add(leftLine);
+        scene.add(rightLine);
+
+        const labelText = `${Math.abs(carga.magnitude)} kN/m`;
+        const label = createTextSprite(labelText, color.rgb, 48);
+        if (label) {
+          const centerX = (carga.startPosition + carga.endPosition) / 2;
+          const labelOffsetY = isDown ? startY + maxHeight * 0.4 : startY - maxHeight * 0.4;
+          label.position.set(centerX, labelOffsetY, 0);
+          scene.add(label);
+        }
+      });
+    } else {
+      const diagramaConfig = diagramaAtivo === 'esforcoCortante'
+        ? {
+          key: 'esforcoCortante',
+          label: 'V(x)',
+          cor: 0xef4444,
+          aliases: ['esforcocortante', 'cortante', 'shear'],
+        }
+        : {
+          key: 'momentoFletor',
+          label: 'M(x)',
+          cor: 0x3b82f6,
+          aliases: ['momentofletor', 'momento', 'moment', 'bending'],
+        };
+
+      const getPointsFromDiscretizacao = (): PontoDiagrama[] => {
+        if (!resultadoProcessamento || typeof resultadoProcessamento !== 'object') return [];
+
+        const root = resultadoProcessamento as Record<string, unknown>;
+        const discretizacaoRaw = root.discretizacao;
+        const discretizacao = Array.isArray(discretizacaoRaw)
+          ? discretizacaoRaw
+          : (discretizacaoRaw && typeof discretizacaoRaw === 'object'
+            ? Object.values(discretizacaoRaw as Record<string, unknown>)
+            : []);
+        if (!Array.isArray(discretizacao) || discretizacao.length === 0) return [];
+
+        const points: PontoDiagrama[] = [];
+
+        discretizacao.forEach((item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+
+          const obj = item as Record<string, unknown>;
+          const xArray = getArrayFromCandidates(obj, ['x', 'X', 'posicoes', 'positions']);
+          const yArray = diagramaAtivo === 'esforcoCortante'
+            ? getArrayFromCandidates(obj, ['shear', 'esforcoCortante', 'v'])
+            : getArrayFromCandidates(obj, ['moment', 'momentoFletor', 'm']);
+
+          if (!xArray || !yArray || xArray.length !== yArray.length) return;
+
+          const elementLabel = typeof obj.elementLabel === 'string'
+            ? obj.elementLabel
+            : (typeof obj.label === 'string' ? obj.label : null);
+
+          const viga = elementLabel ? vigas.find((beam) => beam.id === elementLabel) : undefined;
+          const start = viga?.startPosition ?? 0;
+          const end = viga?.endPosition ?? 0;
+          const length = Math.abs(end - start);
+
+          const xNumeric = xArray
+            .map((value) => toNumber(value))
+            .filter((value): value is number => value !== null);
+          const xMin = xNumeric.length > 0 ? Math.min(...xNumeric) : null;
+          const xMax = xNumeric.length > 0 ? Math.max(...xNumeric) : null;
+          const isLocal = Boolean(viga) && length > 0 && xMin !== null && xMax !== null && xMin >= -1e-6 && xMax <= length + 1e-6;
+
+          for (let i = 0; i < xArray.length; i++) {
+            const x = toNumber(xArray[i]);
+            const valor = toNumber(yArray[i]);
+            if (x === null || valor === null) continue;
+
+            const xGlobal = isLocal && viga
+              ? start + (x / length) * (end - start)
+              : x;
+
+            points.push({ x: xGlobal, valor });
+          }
+        });
+
+        return points.sort((a, b) => a.x - b.x);
+      };
+
+      let points = getPointsFromDiscretizacao();
+
+      if (points.length < 2) {
+        points = findDiagramPoints(resultadoProcessamento, diagramaConfig.aliases);
       }
-    });
+
+      if (points.length < 2) {
+        const emptyLabel = createTextSprite('Sem dados de diagrama. Processe a estrutura.', '#666666', 38);
+        if (emptyLabel) {
+          emptyLabel.position.set((minPos + maxPos) / 2, maxHeight * 0.8, 0);
+          scene.add(emptyLabel);
+        }
+      } else {
+        const maxAbs = Math.max(...points.map((point) => Math.abs(point.valor)), 1);
+        const zOffset = 0;
+        const toDiagramY = (valor: number) => (valor / maxAbs) * (maxHeight * 0.9);
+        const beamHalfHeight = maxHeight / 2;
+        const minimumClearance = maxHeight * 0.35;
+        const getLabelY = (pointY: number, preferredGap = maxHeight * 0.2) => {
+          const isAboveBeam = pointY >= 0;
+          const proposedY = isAboveBeam ? pointY + preferredGap : pointY - preferredGap;
+          const minTopY = beamHalfHeight + minimumClearance;
+          const maxBottomY = -beamHalfHeight - minimumClearance;
+
+          if (isAboveBeam) {
+            return Math.max(proposedY, minTopY);
+          }
+
+          return Math.min(proposedY, maxBottomY);
+        };
+        const unit = diagramaAtivo === 'esforcoCortante' ? 'kN' : 'kN*m';
+
+        const getNearestPointByX = (targetX: number) => {
+          return points.reduce((nearest, current) => (
+            Math.abs(current.x - targetX) < Math.abs(nearest.x - targetX) ? current : nearest
+          ));
+        };
+
+        const displayFactor = diagramaAtivo === 'momentoFletor' ? 0.01 : 1;
+        const signFactor = diagramaAtivo === 'momentoFletor' ? -1 : 1;
+        const formatValue = (valor: number) => `${(valor * displayFactor * signFactor).toFixed(2)}`;
+
+        diagramHoverConfig = {
+          points,
+          unit,
+          displayFactor,
+          signFactor,
+          label: diagramaConfig.label,
+        };
+
+        const baselinePoints = [
+          new THREE.Vector3(minPos, 0, zOffset),
+          new THREE.Vector3(maxPos, 0, zOffset),
+        ];
+        const baselineGeometry = new THREE.BufferGeometry().setFromPoints(baselinePoints);
+        const baselineMaterial = new THREE.LineDashedMaterial({
+          color: diagramaConfig.cor,
+          dashSize: 6,
+          gapSize: 4,
+          linewidth: 1,
+          transparent: true,
+          opacity: 0.5,
+        });
+        const baseline = new THREE.Line(baselineGeometry, baselineMaterial);
+        baseline.computeLineDistances();
+        scene.add(baseline);
+
+        const diagramPoints3D = points.map((point) => (
+          new THREE.Vector3(
+            point.x,
+            toDiagramY(point.valor),
+            zOffset,
+          )
+        ));
+
+        const diagramGeometry = new THREE.BufferGeometry().setFromPoints(diagramPoints3D);
+        const diagramMaterial = new THREE.LineBasicMaterial({
+          color: diagramaConfig.cor,
+          linewidth: 3,
+        });
+        const diagramLine = new THREE.Line(diagramGeometry, diagramMaterial);
+        scene.add(diagramLine);
+
+        const nodePositions = Array.from(
+          new Set(vigas.flatMap((viga) => [viga.startPosition, viga.endPosition]))
+        ).sort((a, b) => a - b);
+        const nodePoints = nodePositions.map((nodeX) => ({
+          x: nodeX,
+          valor: getNearestPointByX(nodeX).valor,
+        }));
+        const tolerance = 1e-6;
+        const isPointOnNode = (point: PontoDiagrama) => nodePoints.some(
+          (node) => Math.abs(node.x - point.x) < tolerance && Math.abs(node.valor - point.valor) < tolerance
+        );
+
+        nodePositions.forEach((nodeX) => {
+          const point = getNearestPointByX(nodeX);
+          const y = toDiagramY(point.valor);
+
+          const markerGeometry = new THREE.SphereGeometry(maxHeight * 0.05, 10, 10);
+          const markerMaterial = new THREE.MeshStandardMaterial({ color: diagramaConfig.cor });
+          const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+          marker.position.set(nodeX, y, zOffset);
+          scene.add(marker);
+
+          const nodeLabel = createTextSprite(`${formatValue(point.valor)} ${unit}`, `#${diagramaConfig.cor.toString(16).padStart(6, '0')}`, 38);
+          if (nodeLabel) {
+            nodeLabel.position.set(nodeX, getLabelY(y, maxHeight * 0.16), zOffset);
+            nodeLabel.renderOrder = 999;
+            scene.add(nodeLabel);
+          }
+        });
+
+        const maxPoint = points.reduce((best, current) => (current.valor > best.valor ? current : best), points[0]);
+        const minPoint = points.reduce((best, current) => (current.valor < best.valor ? current : best), points[0]);
+
+        if (!isPointOnNode(maxPoint)) {
+          const maxMarker = new THREE.Mesh(
+            new THREE.SphereGeometry(maxHeight * 0.06, 12, 12),
+            new THREE.MeshStandardMaterial({ color: 0x16a34a })
+          );
+          maxMarker.position.set(maxPoint.x, toDiagramY(maxPoint.valor), zOffset);
+          scene.add(maxMarker);
+
+          const maxLabel = createTextSprite(`${formatValue(maxPoint.valor)} ${unit}`, '#16a34a', 36);
+          if (maxLabel) {
+            maxLabel.position.set(maxPoint.x, getLabelY(toDiagramY(maxPoint.valor), maxHeight * 0.2), zOffset);
+            maxLabel.renderOrder = 999;
+            scene.add(maxLabel);
+          }
+        }
+
+        if (!isPointOnNode(minPoint)) {
+          const minMarker = new THREE.Mesh(
+            new THREE.SphereGeometry(maxHeight * 0.06, 12, 12),
+            new THREE.MeshStandardMaterial({ color: 0xdc2626 })
+          );
+          minMarker.position.set(minPoint.x, toDiagramY(minPoint.valor), zOffset);
+          scene.add(minMarker);
+
+          const minLabel = createTextSprite(`${formatValue(minPoint.valor)} ${unit}`, '#dc2626', 36);
+          if (minLabel) {
+            minLabel.position.set(minPoint.x, getLabelY(toDiagramY(minPoint.valor), maxHeight * 0.2), zOffset);
+            minLabel.renderOrder = 999;
+            scene.add(minLabel);
+          }
+        }
+      }
+
+    }
 
     // Raycaster for hover detection
     const raycaster = new THREE.Raycaster();
@@ -420,6 +795,29 @@ export function Beam3DViewer({
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, cameraRef.current);
+
+      if (diagramHoverConfig) {
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        const intersection = new THREE.Vector3();
+        const hit = raycaster.ray.intersectPlane(plane, intersection);
+
+        if (hit) {
+          const nearestPoint = diagramHoverConfig.points.reduce((nearest, current) => (
+            Math.abs(current.x - intersection.x) < Math.abs(nearest.x - intersection.x) ? current : nearest
+          ));
+
+          const displayValue = (nearestPoint.valor * diagramHoverConfig.displayFactor * diagramHoverConfig.signFactor).toFixed(2);
+
+          setTooltip({
+            visible: true,
+            text: `x: ${nearestPoint.x.toFixed(2)} cm | ${diagramHoverConfig.label}: ${displayValue} ${diagramHoverConfig.unit}`,
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top,
+          });
+          return;
+        }
+      }
+
       const intersects = raycaster.intersectObjects(sceneRef.current.children, false);
 
       if (intersects.length > 0) {
@@ -535,7 +933,14 @@ export function Beam3DViewer({
       // Clear camera ref
       cameraRef.current = null;
     };
-  }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
+  }, [
+    pilares,
+    vigas,
+    carregamentosPontuais,
+    carregamentosDistribuidos,
+    exibirDiagramas,
+    resultadoProcessamento,
+  ]);
 
   // Camera control functions
   const resetCamera = useCallback(() => {

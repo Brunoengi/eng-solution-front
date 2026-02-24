@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar, SidebarToggleButton, type MenuItem } from '../../../components/user/molecules/sidebar';
 import { Beam3DViewer } from '../../../components/user/molecules/beam-3d-viewer';
@@ -55,6 +55,8 @@ interface CarregamentoDistribuido {
   magnitude: number; // carga por unidade de comprimento (kN/m) - negativo = para baixo
   vigaId?: string; // ID da viga (opcional - se aplicado diretamente em uma viga)
 }
+
+type TipoDiagrama = 'esforcoCortante' | 'momentoFletor';
 
 export default function FnsPage() {
   // Menu items - Seção Principal
@@ -135,6 +137,9 @@ export default function FnsPage() {
   });
   const [isProcessingStructure, setIsProcessingStructure] = useState(false);
   const [processingStructureMessage, setProcessingStructureMessage] = useState<string | null>(null);
+  const [mostrarDiagramas, setMostrarDiagramas] = useState(false);
+  const [diagramaAtivo, setDiagramaAtivo] = useState<TipoDiagrama>('esforcoCortante');
+  const [resultadoProcessamento, setResultadoProcessamento] = useState<unknown | null>(null);
 
   // Função para verificar se há balanço bloqueando posição
   const getPilaresComBalanco = () => {
@@ -508,11 +513,12 @@ export default function FnsPage() {
   const processarEstrutura = async () => {
     setIsProcessingStructure(true);
     setProcessingStructureMessage(null);
+    setResultadoProcessamento(null);
 
     const apiBaseUrl = process.env.NEXT_PUBLIC_ESTRUTURA_API_URL ?? '';
     const apiPath = process.env.NEXT_PUBLIC_ESTRUTURA_API_PATH ?? '/api/beam2d/system';
 
-    const eModulo = Number(process.env.NEXT_PUBLIC_BEAM_E ?? 210_000_000_000);
+    const eModulo = Number(process.env.NEXT_PUBLIC_BEAM_E ?? 210_000);
 
     const nodePositions = Array.from(
       new Set(vigas.flatMap((viga) => [viga.startPosition, viga.endPosition]))
@@ -523,8 +529,8 @@ export default function FnsPage() {
 
     const nodeDataByPosition = new Map<number, {
       label: string;
-      actions: { fx?: number; fy?: number; mz?: number };
-      displacements: { ux?: number; uy?: number; rz?: number };
+      acoes: { fx?: number; fy?: number; mz?: number };
+      deslocamentos: { ux?: number; uy?: number; rz?: number };
     }>();
 
     nodePositions.forEach((position, index) => {
@@ -532,26 +538,26 @@ export default function FnsPage() {
         .filter((carga) => carga.position === position)
         .reduce((acc, carga) => acc + Number(carga.magnitude || 0), 0);
 
-      const displacements: { ux?: number; uy?: number; rz?: number } = {};
+      const deslocamentos: { ux?: number; uy?: number; rz?: number } = {};
       if (hasPilarAtPosition.has(position)) {
-        displacements.uy = 0;
+        deslocamentos.uy = 0;
       }
       if (position === firstSupportPosition) {
-        displacements.ux = 0;
+        deslocamentos.ux = 0;
       }
 
       nodeDataByPosition.set(position, {
         label: `N${index + 1}`,
-        actions: { fx: 0, fy, mz: 0 },
-        displacements,
+        acoes: { fx: 0, fy, mz: 0 },
+        deslocamentos,
       });
     });
 
-    const elementsPayload = vigas
+    const elementosPayload = vigas
       .filter((viga) => viga.startPosition !== viga.endPosition)
       .map((viga) => {
-        const b = viga.width / 100;
-        const h = viga.height / 100;
+        const b = viga.width;
+        const h = viga.height;
 
         const cargasDistribuidasDaViga = carregamentosDistribuidos.filter((carga) =>
           carga.vigaId === viga.id
@@ -564,36 +570,55 @@ export default function FnsPage() {
         const q = cargasDistribuidasDaViga.reduce((acc, carga) => acc + Number(carga.magnitude || 0), 0);
 
         return {
-          node_i: {
-            x: viga.startPosition / 100,
-            y: 0,
-            label: nodeDataByPosition.get(viga.startPosition)?.label ?? 'Ni',
-            actions: nodeDataByPosition.get(viga.startPosition)?.actions ?? {},
-            displacements: nodeDataByPosition.get(viga.startPosition)?.displacements ?? {},
-          },
-          node_j: {
-            x: viga.endPosition / 100,
-            y: 0,
-            label: nodeDataByPosition.get(viga.endPosition)?.label ?? 'Nj',
-            actions: nodeDataByPosition.get(viga.endPosition)?.actions ?? {},
-            displacements: nodeDataByPosition.get(viga.endPosition)?.displacements ?? {},
-          },
+          label: viga.id,
           E: eModulo,
           A: b * h,
           I: (b * Math.pow(h, 3)) / 12,
           q,
-          label: viga.id,
+          no_i: {
+            y: 0,
+            x: viga.startPosition,
+            label: nodeDataByPosition.get(viga.startPosition)?.label ?? 'Ni',
+            acoes: nodeDataByPosition.get(viga.startPosition)?.acoes ?? {},
+            deslocamentos: nodeDataByPosition.get(viga.startPosition)?.deslocamentos ?? {},
+          },
+          no_j: {
+            y: 0,
+            x: viga.endPosition,
+            label: nodeDataByPosition.get(viga.endPosition)?.label ?? 'Nj',
+            acoes: nodeDataByPosition.get(viga.endPosition)?.acoes ?? {},
+            deslocamentos: nodeDataByPosition.get(viga.endPosition)?.deslocamentos ?? {},
+          },
         };
       });
 
-    if (elementsPayload.length === 0) {
+    if (elementosPayload.length === 0) {
       setProcessingStructureMessage('Nenhuma viga válida para processar (comprimento zero).');
       setIsProcessingStructure(false);
       return;
     }
 
+    const diagramas = {
+      esforcoCortante: true,
+      momentoFletor: true,
+      deslocamentoTransversal: false,
+      rotacao: false,
+    };
+
     try {
-      console.log('Payload /beam2d/system:', { Elements: elementsPayload });
+      console.log('Payload /beam2d/system:', {
+        elementos: elementosPayload,
+        diagramas,
+        sistemaDeUnidades: {
+          distancia: 'cm',
+          forca: 'kN',
+          area: 'cm²',
+          momentoDeInercia: 'cm^4',
+          moduloElasticidade: 'MPa',
+          cargaDistribuida: 'kN/m',
+          momento: 'kN*m',
+        },
+      });
 
       const response = await fetch(`${apiBaseUrl}${apiPath}`, {
         method: 'POST',
@@ -601,7 +626,17 @@ export default function FnsPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          Elements: elementsPayload,
+          elementos: elementosPayload,
+          diagramas,
+          sistemaDeUnidades: {
+            distancia: 'cm',
+            forca: 'kN',
+            area: 'cm²',
+            momentoDeInercia: 'cm^4',
+            moduloElasticidade: 'MPa',
+            cargaDistribuida: 'kN/m',
+            momento: 'kN*m',
+          },
         }),
       });
 
@@ -624,6 +659,7 @@ export default function FnsPage() {
         throw new Error(`Falha ao processar estrutura (HTTP ${response.status}): ${errorDetails}`);
       }
 
+      setResultadoProcessamento(responseData);
       setProcessingStructureMessage('Estrutura processada com sucesso.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro desconhecido ao processar estrutura.';
@@ -632,6 +668,16 @@ export default function FnsPage() {
       setIsProcessingStructure(false);
     }
   };
+
+  const exibirDiagramas = mostrarDiagramas;
+  const tituloVisualizacao = exibirDiagramas
+    ? `Diagrama ativo: ${diagramaAtivo === 'esforcoCortante' ? 'V(x) - Esforço Cortante' : 'M(x) - Momento Fletor'}`
+    : 'Visualização da Viga';
+
+  useEffect(() => {
+    setResultadoProcessamento(null);
+    setMostrarDiagramas(false);
+  }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
 
   return (
     <SidebarProvider defaultOpen={false}>
@@ -652,15 +698,32 @@ export default function FnsPage() {
           {/* Header */}
           <div className={styles.headerStyles.container}>
             <div className={styles.headerStyles.wrapper}>
-              <h1 className={styles.headerStyles.title + ' ' + styles.fontSizesResponsive.pageTitle}>
-                Dimensionamento de Vigas (FNS)
-              </h1>
-              <p className={styles.headerStyles.subtitle + ' ' + styles.fontSizesResponsive.subtitle}>
-                Flexão Normal Simples - Sistema de cálculo estrutural
-              </p>
-              <Button className="mt-4" onClick={processarEstrutura} disabled={isProcessingStructure}>
-                {isProcessingStructure ? 'Processando...' : 'Processar estrutura'}
-              </Button>
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <h1 className={styles.headerStyles.title + ' ' + styles.fontSizesResponsive.pageTitle}>
+                  Dimensionamento de Vigas (FNS)
+                </h1>
+                <div className="flex items-center gap-2">
+                  <Button onClick={processarEstrutura} disabled={isProcessingStructure}>
+                    {isProcessingStructure ? 'Processando...' : 'Processar estrutura'}
+                  </Button>
+                  <Button
+                    variant={mostrarDiagramas ? 'default' : 'outline'}
+                    onClick={() => setMostrarDiagramas((prev) => !prev)}
+                  >
+                    {mostrarDiagramas ? 'Mostrar cargas' : 'Mostrar diagramas'}
+                  </Button>
+                  {mostrarDiagramas && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setDiagramaAtivo((prev) => (
+                        prev === 'esforcoCortante' ? 'momentoFletor' : 'esforcoCortante'
+                      ))}
+                    >
+                      Alternar diagrama: {diagramaAtivo === 'esforcoCortante' ? 'Cortante' : 'Momento'}
+                    </Button>
+                  )}
+                </div>
+              </div>
               {processingStructureMessage && (
                 <p className="mt-2 text-sm text-muted-foreground">{processingStructureMessage}</p>
               )}
@@ -674,7 +737,7 @@ export default function FnsPage() {
               <Tabs defaultValue="3d" className="w-full">
                 <div className={styles.cardStyles.base}>
                   <div className={`${styles.cardStyles.header} flex items-center justify-between`}>
-                    <h3 className={styles.cardStyles.title}>Visualização da Viga</h3>
+                    <h3 className={styles.cardStyles.title}>{tituloVisualizacao}</h3>
                     <div className="flex items-center gap-2">
                       <TabsList className="grid grid-cols-2 h-8 w-auto">
                         <TabsTrigger value="3d" className="text-xs px-4">3D</TabsTrigger>
@@ -1138,8 +1201,11 @@ export default function FnsPage() {
                         <Beam3DViewer 
                           pilares={pilares} 
                           vigas={vigas} 
-                          carregamentosPontuais={carregamentosPontuais}
-                          carregamentosDistribuidos={carregamentosDistribuidos}
+                          carregamentosPontuais={exibirDiagramas ? [] : carregamentosPontuais}
+                          carregamentosDistribuidos={exibirDiagramas ? [] : carregamentosDistribuidos}
+                          exibirDiagramas={exibirDiagramas}
+                          diagramaAtivo={diagramaAtivo}
+                          resultadoProcessamento={resultadoProcessamento}
                         />
                       </div>
                     </TabsContent>
@@ -1149,8 +1215,11 @@ export default function FnsPage() {
                         <Beam2DViewer 
                           pilares={pilares} 
                           vigas={vigas}
-                          carregamentosPontuais={carregamentosPontuais}
-                          carregamentosDistribuidos={carregamentosDistribuidos}
+                          carregamentosPontuais={exibirDiagramas ? [] : carregamentosPontuais}
+                          carregamentosDistribuidos={exibirDiagramas ? [] : carregamentosDistribuidos}
+                          exibirDiagramas={exibirDiagramas}
+                          diagramaAtivo={diagramaAtivo}
+                          resultadoProcessamento={resultadoProcessamento}
                         />
                       </div>
                     </TabsContent>
