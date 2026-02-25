@@ -234,6 +234,27 @@ export function Beam3DViewer({
     y: number;
   }>({ visible: false, text: '', x: 0, y: 0 });
 
+  const getViewMetrics = useCallback(() => {
+    const allPositions = [...pilares.map((p) => p.position), ...vigas.flatMap((v) => [v.startPosition, v.endPosition])];
+    const minPos = allPositions.length > 0 ? Math.min(...allPositions) : -200;
+    const maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 200;
+    const centerX = (minPos + maxPos) / 2;
+    const maxHeight = vigas.length > 0 ? Math.max(...vigas.map((v) => v.height)) : 40;
+    const maxWidth = vigas.length > 0 ? Math.max(...vigas.map((v) => v.width)) : 20;
+    const structureSpan = maxPos - minPos;
+    const structureSize = Math.max(structureSpan, maxHeight * 2, 200);
+
+    return {
+      minPos,
+      maxPos,
+      centerX,
+      maxHeight,
+      maxWidth,
+      structureSpan,
+      structureSize,
+    };
+  }, [pilares, vigas]);
+
 
 
   useEffect(() => {
@@ -258,14 +279,10 @@ export function Beam3DViewer({
     );
     
     // Calcular limites da estrutura para posicionar câmera
-    const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
-    const minPos = allPositions.length > 0 ? Math.min(...allPositions) : -200;
-    const maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 200;
-    const maxHeight = vigas.length > 0 ? Math.max(...vigas.map(v => v.height)) : 40;
-    const structureSize = Math.max(maxPos - minPos, maxHeight * 2, 200);
+    const { centerX, maxHeight, structureSize, minPos, maxPos } = getViewMetrics();
     
-    camera.position.set(structureSize * 1.5, maxHeight * 2, structureSize * 1.5);
-    camera.lookAt(0, 0, 0);
+    camera.position.set(centerX + structureSize * 1.5, maxHeight * 2, structureSize * 1.5);
+    camera.lookAt(centerX, 0, 0);
     cameraRef.current = camera;
 
     // Renderer
@@ -283,6 +300,8 @@ export function Beam3DViewer({
     controls.dampingFactor = 0.05;
     controls.minDistance = 100;
     controls.maxDistance = 1000;
+    controls.target.set(centerX, 0, 0);
+    controls.update();
     controlsRef.current = controls;
 
     // Lights
@@ -946,71 +965,56 @@ export function Beam3DViewer({
   const resetCamera = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
     
-    const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
-    const minPos = allPositions.length > 0 ? Math.min(...allPositions) : -200;
-    const maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 200;
-    const maxHeight = vigas.length > 0 ? Math.max(...vigas.map(v => v.height)) : 40;
-    const structureSize = Math.max(maxPos - minPos, maxHeight * 2, 200);
+    const { centerX, maxHeight, structureSize } = getViewMetrics();
     
-    cameraRef.current.position.set(structureSize * 1.5, maxHeight * 2, structureSize * 1.5);
-    controlsRef.current.target.set(0, 0, 0);
+    cameraRef.current.position.set(centerX + structureSize * 1.5, maxHeight * 2, structureSize * 1.5);
+    controlsRef.current.target.set(centerX, 0, 0);
     controlsRef.current.update();
-  }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
+  }, [getViewMetrics]);
 
   const setIsometricView = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
     
-    const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
-    const minPos = allPositions.length > 0 ? Math.min(...allPositions) : -200;
-    const maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 200;
-    const maxHeight = vigas.length > 0 ? Math.max(...vigas.map(v => v.height)) : 40;
-    const maxWidth = vigas.length > 0 ? Math.max(...vigas.map(v => v.width)) : 20;
-    const distance = Math.max(maxWidth, maxHeight, maxPos - minPos) * 1.5;
+    const { centerX, maxHeight, maxWidth, structureSpan } = getViewMetrics();
+    const distance = Math.max(maxWidth, maxHeight, structureSpan) * 1.5;
     
-    cameraRef.current.position.set(distance * 0.7, distance * 0.7, distance * 0.7);
-    controlsRef.current.target.set(0, 0, 0);
+    cameraRef.current.position.set(centerX + distance * 0.7, distance * 0.7, distance * 0.7);
+    controlsRef.current.target.set(centerX, 0, 0);
     controlsRef.current.update();
-  }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
+  }, [getViewMetrics]);
 
   const setFrontView = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
     
-    const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
-    const minPos = allPositions.length > 0 ? Math.min(...allPositions) : -200;
-    const maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 200;
-    const maxHeight = vigas.length > 0 ? Math.max(...vigas.map(v => v.height)) : 40;
-    const distance = Math.max(maxHeight, maxPos - minPos) * 1.2;
+    const { centerX, maxHeight, structureSpan } = getViewMetrics();
+    const distance = Math.max(maxHeight, structureSpan) * 1.2;
     
-    cameraRef.current.position.set(0, 0, distance);
-    controlsRef.current.target.set(0, 0, 0);
+    cameraRef.current.position.set(centerX, 0, distance);
+    controlsRef.current.target.set(centerX, 0, 0);
     controlsRef.current.update();
-  }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
+  }, [getViewMetrics]);
 
   const setTopView = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
     
-    const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
-    const minPos = allPositions.length > 0 ? Math.min(...allPositions) : -200;
-    const maxPos = allPositions.length > 0 ? Math.max(...allPositions) : 200;
-    const maxWidth = vigas.length > 0 ? Math.max(...vigas.map(v => v.width)) : 20;
-    const distance = Math.max(maxWidth, maxPos - minPos) * 1.5;
+    const { centerX, maxWidth, structureSpan } = getViewMetrics();
+    const distance = Math.max(maxWidth, structureSpan) * 1.5;
     
-    cameraRef.current.position.set(0, distance, 0);
-    controlsRef.current.target.set(0, 0, 0);
+    cameraRef.current.position.set(centerX, distance, 0);
+    controlsRef.current.target.set(centerX, 0, 0);
     controlsRef.current.update();
-  }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
+  }, [getViewMetrics]);
 
   const setSideView = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
     
-    const maxWidth = vigas.length > 0 ? Math.max(...vigas.map(v => v.width)) : 20;
-    const maxHeight = vigas.length > 0 ? Math.max(...vigas.map(v => v.height)) : 40;
+    const { centerX, maxWidth, maxHeight } = getViewMetrics();
     const distance = Math.max(maxWidth, maxHeight) * 4;
     
-    cameraRef.current.position.set(distance, 0, 0);
-    controlsRef.current.target.set(0, 0, 0);
+    cameraRef.current.position.set(centerX + distance, 0, 0);
+    controlsRef.current.target.set(centerX, 0, 0);
     controlsRef.current.update();
-  }, [vigas, carregamentosPontuais, carregamentosDistribuidos]);
+  }, [getViewMetrics]);
 
   const zoomIn = useCallback(() => {
     if (!cameraRef.current || !controlsRef.current) return;
