@@ -207,6 +207,9 @@ interface Beam3DViewerProps {
   exibirDiagramas?: boolean;
   diagramaAtivo?: TipoDiagrama;
   resultadoProcessamento?: unknown;
+  showResetControl?: boolean;
+  autoRotate?: boolean;
+  autoRotateSpeed?: number;
   className?: string;
 }
 
@@ -218,6 +221,9 @@ export function Beam3DViewer({
   exibirDiagramas = false,
   diagramaAtivo = 'esforcoCortante',
   resultadoProcessamento = null,
+  showResetControl = true,
+  autoRotate = false,
+  autoRotateSpeed = 0.8,
   className = '' 
 }: Beam3DViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -226,6 +232,10 @@ export function Beam3DViewer({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const animationFrameRef = useRef<number | undefined>(undefined);
+  const persistedViewRef = useRef<{
+    position: [number, number, number];
+    target: [number, number, number];
+  } | null>(null);
   
   const [tooltip, setTooltip] = useState<{
     visible: boolean;
@@ -280,9 +290,16 @@ export function Beam3DViewer({
     
     // Calcular limites da estrutura para posicionar câmera
     const { centerX, maxHeight, structureSize, minPos, maxPos } = getViewMetrics();
-    
-    camera.position.set(centerX + structureSize * 1.5, maxHeight * 2, structureSize * 1.5);
-    camera.lookAt(centerX, 0, 0);
+    const initialDistance = Math.max(structureSize * 0.95, maxHeight * 5, 220);
+
+    const persistedView = persistedViewRef.current;
+    if (persistedView) {
+      camera.position.set(...persistedView.position);
+      camera.lookAt(...persistedView.target);
+    } else {
+      camera.position.set(centerX + initialDistance * 0.7, initialDistance * 0.45, initialDistance * 0.7);
+      camera.lookAt(centerX, 0, 0);
+    }
     cameraRef.current = camera;
 
     // Renderer
@@ -300,7 +317,13 @@ export function Beam3DViewer({
     controls.dampingFactor = 0.05;
     controls.minDistance = 100;
     controls.maxDistance = 1000;
-    controls.target.set(centerX, 0, 0);
+    controls.autoRotate = autoRotate;
+    controls.autoRotateSpeed = autoRotateSpeed;
+    if (persistedView) {
+      controls.target.set(...persistedView.target);
+    } else {
+      controls.target.set(centerX, 0, 0);
+    }
     controls.update();
     controlsRef.current = controls;
 
@@ -921,6 +944,13 @@ export function Beam3DViewer({
         rendererRef.current.domElement.removeEventListener('mousemove', onMouseMove);
       }
 
+      if (cameraRef.current && controlsRef.current) {
+        persistedViewRef.current = {
+          position: [cameraRef.current.position.x, cameraRef.current.position.y, cameraRef.current.position.z],
+          target: [controlsRef.current.target.x, controlsRef.current.target.y, controlsRef.current.target.z],
+        };
+      }
+
       // Dispose controls
       if (controlsRef.current) {
         controlsRef.current.dispose();
@@ -958,7 +988,10 @@ export function Beam3DViewer({
     carregamentosPontuais,
     carregamentosDistribuidos,
     exibirDiagramas,
+    diagramaAtivo,
     resultadoProcessamento,
+    autoRotate,
+    autoRotateSpeed,
   ]);
 
   // Camera control functions
@@ -966,8 +999,9 @@ export function Beam3DViewer({
     if (!cameraRef.current || !controlsRef.current) return;
     
     const { centerX, maxHeight, structureSize } = getViewMetrics();
-    
-    cameraRef.current.position.set(centerX + structureSize * 1.5, maxHeight * 2, structureSize * 1.5);
+    const initialDistance = Math.max(structureSize * 0.95, maxHeight * 5, 220);
+
+    cameraRef.current.position.set(centerX + initialDistance * 0.7, initialDistance * 0.45, initialDistance * 0.7);
     controlsRef.current.target.set(centerX, 0, 0);
     controlsRef.current.update();
   }, [getViewMetrics]);
@@ -1048,7 +1082,7 @@ export function Beam3DViewer({
   };
 
   return (
-    <div className={`relative w-full h-full min-h-[400px] ${className}`}>
+    <div className={`relative w-full h-full min-h-[400px] overflow-hidden ${className}`}>
       {/* Canvas Container */}
       <div 
         ref={containerRef} 
@@ -1099,19 +1133,20 @@ export function Beam3DViewer({
           </Button>
         </div>
 
-        {/* Separator */}
-        <div className="border-t my-1" />
-
-        {/* Reset */}
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={handleButtonClick(resetCamera, 'Reset')}
-          className="justify-start gap-2 h-8"
-        >
-          <RotateCcw className="h-3 w-3" />
-          <span className="text-xs">Resetar</span>
-        </Button>
+        {showResetControl && (
+          <>
+            <div className="border-t my-1" />
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleButtonClick(resetCamera, 'Reset')}
+              className="justify-start gap-2 h-8"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span className="text-xs">Resetar</span>
+            </Button>
+          </>
+        )}
       </div>
 
       {/* Right Control Panel - Zoom Controls */}
@@ -1141,10 +1176,12 @@ export function Beam3DViewer({
       </div>
 
       {/* Instructions */}
-      <div className="absolute bottom-4 left-4 bg-background/80 backdrop-blur-sm p-2 rounded-lg border text-xs text-muted-foreground z-50 pointer-events-none">
-        <div className="flex items-center gap-2">
+      <div className="absolute bottom-4 left-4 right-4 bg-background/80 backdrop-blur-sm p-2 rounded-lg border text-xs text-muted-foreground z-50 pointer-events-none max-w-[calc(100%-2rem)]">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
           <Maximize2 className="h-3 w-3" />
-          <span>Arraste para rotacionar • Scroll para zoom • Botão direito para mover</span>
+          <span>Arraste para rotacionar</span>
+          <span>Scroll para zoom</span>
+          <span>Botão direito para mover</span>
         </div>
       </div>
 

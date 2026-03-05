@@ -1,6 +1,7 @@
 import { Header } from '../components/user/layout/header';
-import { GridContainer, GridLayout, GridItem } from '../components/user/layout/grid-layout';
+import { GridContainer } from '../components/user/layout/grid-layout';
 import { Button } from '@/components/ui/button';
+import { HeroBeamMoment } from '@/components/user/molecules/hero-beam-moment';
 
 export default function Home() {
   return (
@@ -8,72 +9,31 @@ export default function Home() {
       <Header />
       <main className="flex-1">
         <GridContainer className="py-12">
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-foreground">
-              Bem-vindo ao Eng Solution
-            </h1>
-            <p className="text-lg text-muted-foreground">
-              Sua plataforma de soluções de engenharia
-            </p>
-            <Button className="mt-4">Calcular esforços solicitantes</Button>
-          </div>
-
-          <GridLayout>
-            <GridItem cols={12} colsMd={6} colsSm={12}>
-              <div className="rounded-lg border border-border bg-card p-6">
-                <h2 className="mb-3 text-xl font-semibold text-card-foreground">
-                  Card 1
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Este é um exemplo de item em um grid de 12 colunas. Ocupa 6 colunas em telas médias e 12 em telas pequenas.
+          <section className="mb-10 rounded-xl border border-border bg-card/50 p-4 md:p-6">
+            <div className="grid grid-cols-1 items-center gap-6 lg:grid-cols-5">
+              <div className="lg:col-span-2">
+                <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary">Engenharia Estrutural</p>
+                <h1 className="text-3xl font-bold text-foreground md:text-4xl">
+                  Diagrama de momento fletor para viga contínua com balanço
+                </h1>
+                <p className="mt-3 text-base text-muted-foreground">
+                  Visualização técnica da envoltória de momentos para apoiar análise e dimensionamento estrutural.
                 </p>
+                <div className="mt-5 flex items-center gap-3">
+                  <Button asChild>
+                    <a href="/dashboard/geometria">Abrir módulo de Geometria</a>
+                  </Button>
+                  <Button variant="outline" asChild>
+                    <a href="/dashboard/viga-concreto-armado">Explorar Dimensionamento</a>
+                  </Button>
+                </div>
               </div>
-            </GridItem>
 
-            <GridItem cols={12} colsMd={6} colsSm={12}>
-              <div className="rounded-lg border border-border bg-card p-6">
-                <h2 className="mb-3 text-xl font-semibold text-card-foreground">
-                  Card 2
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Layout responsivo e reutilizável em todas as páginas do projeto.
-                </p>
+              <div className="rounded-lg border border-border bg-background/80 p-2 lg:col-span-3">
+                <HeroBeamMoment />
               </div>
-            </GridItem>
-
-            <GridItem cols={12} colsMd={4} colsSm={12}>
-              <div className="rounded-lg border border-border bg-card p-6">
-                <h2 className="mb-3 text-xl font-semibold text-card-foreground">
-                  Card 3
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  4 colunas em telas médias
-                </p>
-              </div>
-            </GridItem>
-
-            <GridItem cols={12} colsMd={4} colsSm={12}>
-              <div className="rounded-lg border border-border bg-card p-6">
-                <h2 className="mb-3 text-xl font-semibold text-card-foreground">
-                  Card 4
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  4 colunas em telas médias
-                </p>
-              </div>
-            </GridItem>
-
-            <GridItem cols={12} colsMd={4} colsSm={12}>
-              <div className="rounded-lg border border-border bg-card p-6">
-                <h2 className="mb-3 text-xl font-semibold text-card-foreground">
-                  Card 5
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  4 colunas em telas médias
-                </p>
-              </div>
-            </GridItem>
-          </GridLayout>
+            </div>
+          </section>
         </GridContainer>
       </main>
     </div>

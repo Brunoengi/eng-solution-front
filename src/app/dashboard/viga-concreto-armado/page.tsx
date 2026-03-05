@@ -510,6 +510,28 @@ export default function FnsPage() {
     setCarregamentosDistribuidos(carregamentosDistribuidos.filter(c => c.id !== id));
   };
 
+  const aplicarCarregamentoDistribuidoEmTodasVigas = () => {
+    if (vigas.length === 0) {
+      alert('Adicione vigas antes de aplicar carregamentos distribuídos.');
+      return;
+    }
+
+    const novosCarregamentos = vigas.map((viga, index) => {
+      const magnitudeAleatoria = Number((10 + Math.random() * 5).toFixed(2));
+
+      return {
+        id: `CD${index + 1}`,
+        startPosition: viga.startPosition,
+        endPosition: viga.endPosition,
+        magnitude: -magnitudeAleatoria,
+        vigaId: viga.id,
+      } as CarregamentoDistribuido;
+    });
+
+    setCarregamentosDistribuidos(novosCarregamentos);
+    setCargaDistFormKey(prev => prev + 1);
+  };
+
   const processarEstrutura = async () => {
     setIsProcessingStructure(true);
     setProcessingStructureMessage(null);
@@ -1049,6 +1071,14 @@ export default function FnsPage() {
                             {/* Seção Carregamentos Distribuídos */}
                             <div>
                               <h4 className="text-sm font-semibold mb-3">Carregamentos Distribuídos</h4>
+                              <Button
+                                onClick={aplicarCarregamentoDistribuidoEmTodasVigas}
+                                size="sm"
+                                variant="secondary"
+                                className="w-full mb-3"
+                              >
+                                Aplicar em todas as vigas (10 a 15 kN/m)
+                              </Button>
                               <div className="space-y-2 mb-4">
                                 {carregamentosDistribuidos.map((carga) => (
                                   <div key={carga.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">

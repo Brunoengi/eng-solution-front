@@ -43,6 +43,7 @@ interface AppSidebarProps {
   menuGroupLabel?: string;
   configGroupLabel?: string;
   exportGroupLabel?: string;
+  centerConfigOnly?: boolean;
 }
 
 function SidebarToggle() {
@@ -121,10 +122,11 @@ function MenuItemComponent({ item }: { item: MenuItem }) {
   );
 }
 
-export function AppSidebar({ menuItems = [], configItems = [], exportItems = [], menuGroupLabel = 'Menu Principal', configGroupLabel = 'Configurações', exportGroupLabel = 'Exportar' }: AppSidebarProps) {
+export function AppSidebar({ menuItems = [], configItems = [], exportItems = [], menuGroupLabel = 'Menu Principal', configGroupLabel = 'Configurações', exportGroupLabel = 'Exportar', centerConfigOnly = false }: AppSidebarProps) {
   const defaultMenuItems: MenuItem[] = menuItems.length > 0 ? menuItems : [];
   const defaultConfigItems: MenuItem[] = configItems.length > 0 ? configItems : [];
   const defaultExportItems: MenuItem[] = exportItems.length > 0 ? exportItems : [];
+  const isConfigOnly = centerConfigOnly && defaultMenuItems.length === 0 && defaultExportItems.length === 0 && defaultConfigItems.length > 0;
 
   return (
     <Sidebar className="border-r shadow-lg">
@@ -138,8 +140,8 @@ export function AppSidebar({ menuItems = [], configItems = [], exportItems = [],
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="overflow-y-auto p-6">
-        <div className="space-y-6">
+      <SidebarContent className={`overflow-y-auto p-6 ${isConfigOnly ? 'flex items-center justify-center' : ''}`}>
+        <div className={`space-y-6 ${isConfigOnly ? 'w-full' : ''}`}>
           {defaultMenuItems.length > 0 && (
             <SidebarGroup>
               <SidebarGroupLabel className="text-sm font-semibold mb-3">{menuGroupLabel}</SidebarGroupLabel>
