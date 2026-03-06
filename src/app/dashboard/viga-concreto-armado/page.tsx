@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { normalizeDistributedLoadQForApi, normalizePointLoadFyForApi } from '@/lib/beam2d-load-convention';
 import {
   Layers,
   ArrowUpDown,
@@ -558,7 +559,7 @@ export default function FnsPage() {
     nodePositions.forEach((position, index) => {
       const fy = carregamentosPontuais
         .filter((carga) => carga.position === position)
-        .reduce((acc, carga) => acc + Number(carga.magnitude || 0), 0);
+        .reduce((acc, carga) => acc + normalizePointLoadFyForApi(carga.magnitude), 0);
 
       const deslocamentos: { ux?: number; uy?: number; rz?: number } = {};
       if (hasPilarAtPosition.has(position)) {
@@ -589,7 +590,7 @@ export default function FnsPage() {
           )
         );
 
-        const q = cargasDistribuidasDaViga.reduce((acc, carga) => acc + Number(carga.magnitude || 0), 0);
+        const q = cargasDistribuidasDaViga.reduce((acc, carga) => acc + normalizeDistributedLoadQForApi(carga.magnitude), 0);
 
         return {
           label: viga.id,

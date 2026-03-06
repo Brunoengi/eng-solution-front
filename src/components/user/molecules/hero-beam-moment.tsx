@@ -6,43 +6,60 @@ import { Beam3DViewer } from '@/components/user/molecules/beam-3d-viewer';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const pilares = [
-  { id: 'P1', width: 20, position: -300 },
-  { id: 'P2', width: 20, position: 0 },
-  { id: 'P3', width: 20, position: 300 },
+  { id: 'P1', width: 20, position: 0 },
+  { id: 'P2', width: 20, position: 300 },
+  { id: 'P3', width: 20, position: 600 },
 ];
 
 const vigas = [
-  { id: 'V1', width: 20, height: 50, startPosition: -300, endPosition: 0, startPillarId: 'P1', endPillarId: 'P2' },
-  { id: 'V2', width: 20, height: 50, startPosition: 0, endPosition: 300, startPillarId: 'P2', endPillarId: 'P3' },
-  { id: 'V3', width: 20, height: 50, startPosition: 300, endPosition: 450, startPillarId: 'P3' },
+  { id: 'V1', width: 20, height: 50, startPosition: 0, endPosition: 300, startPillarId: 'P1', endPillarId: 'P2' },
+  { id: 'V2', width: 20, height: 50, startPosition: 300, endPosition: 600, startPillarId: 'P2', endPillarId: 'P3' },
+  { id: 'V3', width: 20, height: 50, startPosition: 600, endPosition: 750, startPillarId: 'P3' },
 ];
 
 const carregamentosPontuais = [
-  { id: 'CP1', position: -120, magnitude: -22 },
-  { id: 'CP2', position: 120, magnitude: -18 },
-  { id: 'CP3', position: 390, magnitude: -14 },
+  { id: 'CP1', position: 180, magnitude: -22 },
+  { id: 'CP2', position: 420, magnitude: -18 },
+  { id: 'CP3', position: 690, magnitude: -14 },
 ];
 
 const carregamentosDistribuidos = [
-  { id: 'CD1', startPosition: -300, endPosition: 0, magnitude: -8, vigaId: 'V1' },
-  { id: 'CD2', startPosition: 0, endPosition: 300, magnitude: -10, vigaId: 'V2' },
-  { id: 'CD3', startPosition: 300, endPosition: 450, magnitude: -6, vigaId: 'V3' },
+  { id: 'CD1', startPosition: 0, endPosition: 300, magnitude: -8, vigaId: 'V1' },
+  { id: 'CD2', startPosition: 300, endPosition: 600, magnitude: -10, vigaId: 'V2' },
+  { id: 'CD3', startPosition: 600, endPosition: 750, magnitude: -6, vigaId: 'V3' },
 ];
 
-const resultadoProcessamento = {
-  discretizacao: [
-    {
-      elementLabel: 'HERO_CASE',
-      x: [-300, -240, -180, -120, -60, 0, 60, 120, 180, 240, 300, 360, 420, 450],
-      shear: [28, 24, 19, 12, 6, -8, -15, -20, -18, -10, 9, 14, 8, 0],
-      moment: [0, 28, 46, 38, 16, -24, -42, -50, -38, -16, 20, 34, 18, 0],
-    },
+const heroPayload = {
+  pontosDiscretizacao: 120,
+  diagramas: {
+    esforcoCortante: true,
+    momentoFletor: true,
+    deslocamentoTransversal: false,
+    rotacao: false,
+  },
+  elementos: [
+    { label: 'E1', E: 210000, A: 30, I: 45000, q: -8, no_i: { label: 'N1', x: 0, y: 0, deslocamentos: { ux: 0, uy: 0 } }, no_j: { label: 'N2', x: 180, y: 0, acoes: { fy: -22 } } },
+    { label: 'E2', E: 210000, A: 30, I: 45000, q: -8, no_i: { label: 'N2', x: 180, y: 0 }, no_j: { label: 'N3', x: 300, y: 0, deslocamentos: { uy: 0 } } },
+    { label: 'E3', E: 210000, A: 30, I: 45000, q: -10, no_i: { label: 'N3', x: 300, y: 0 }, no_j: { label: 'N4', x: 420, y: 0, acoes: { fy: -18 } } },
+    { label: 'E4', E: 210000, A: 30, I: 45000, q: -10, no_i: { label: 'N4', x: 420, y: 0 }, no_j: { label: 'N5', x: 600, y: 0, deslocamentos: { uy: 0 } } },
+    { label: 'E5', E: 210000, A: 30, I: 45000, q: -6, no_i: { label: 'N5', x: 600, y: 0 }, no_j: { label: 'N6', x: 690, y: 0, acoes: { fy: -14 } } },
+    { label: 'E6', E: 210000, A: 30, I: 45000, q: -6, no_i: { label: 'N6', x: 690, y: 0 }, no_j: { label: 'N7', x: 750, y: 0 } },
   ],
+  sistemaDeUnidades: {
+    distancia: 'cm',
+    forca: 'kN',
+    area: 'cm²',
+    momentoDeInercia: 'cm^4',
+    moduloElasticidade: 'MPa',
+    cargaDistribuida: 'kN/m',
+    momento: 'kN*m',
+  },
 };
 
 export function HeroBeamMoment({ className = '' }: { className?: string }) {
   const [modoVisualizacao, setModoVisualizacao] = useState<'cargas' | 'cortante' | 'momento'>('momento');
   const [tipoVista, setTipoVista] = useState<'3d' | '2d'>('3d');
+  const [resultadoProcessamento, setResultadoProcessamento] = useState<unknown | null>(null);
 
   useEffect(() => {
     const sequence: Array<'cargas' | 'cortante' | 'momento'> = ['cargas', 'cortante', 'momento'];
@@ -55,6 +72,63 @@ export function HeroBeamMoment({ className = '' }: { className?: string }) {
     }, 3500);
 
     return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const processarHero = async () => {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_ESTRUTURA_API_URL ?? '';
+      const apiPath = process.env.NEXT_PUBLIC_ESTRUTURA_API_PATH ?? '/api/beam2d/system';
+
+      try {
+        const response = await fetch(`${apiBaseUrl}${apiPath}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(heroPayload),
+        });
+
+        const responseText = await response.text();
+        let responseData: unknown = responseText;
+
+        try {
+          responseData = responseText ? JSON.parse(responseText) : null;
+        } catch {
+          responseData = responseText;
+        }
+
+        if (!response.ok) {
+          setResultadoProcessamento(null);
+          return;
+        }
+
+        if (responseData && typeof responseData === 'object' && !Array.isArray(responseData)) {
+          const responseObject = responseData as Record<string, unknown>;
+          const post = responseObject.posProcessamento;
+
+          const enrichedResponse: Record<string, unknown> = {
+            ...responseObject,
+            elementos: responseObject.elementos ?? heroPayload.elementos,
+          };
+
+          if (post && typeof post === 'object' && !Array.isArray(post)) {
+            enrichedResponse.posProcessamento = {
+              ...(post as Record<string, unknown>),
+              elementos: (post as Record<string, unknown>).elementos ?? responseObject.elementos ?? heroPayload.elementos,
+            };
+          }
+
+          setResultadoProcessamento(enrichedResponse);
+          return;
+        }
+
+        setResultadoProcessamento(responseData);
+      } catch {
+        setResultadoProcessamento(null);
+      }
+    };
+
+    processarHero();
   }, []);
 
   const exibirDiagramas = modoVisualizacao !== 'cargas';

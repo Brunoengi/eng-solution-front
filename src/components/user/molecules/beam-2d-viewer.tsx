@@ -55,6 +55,25 @@ const toNumber = (value: unknown): number | null => {
   return null;
 };
 
+const getMomentoDisplayFactor = (source: unknown): number => {
+  if (!source || typeof source !== 'object') return 0.01;
+
+  const root = source as Record<string, unknown>;
+  const post = root.posProcessamento ?? root.pos_processamento ?? root.postProcessamento ?? root.post_processing;
+  const candidateRoot = (post && typeof post === 'object' && !Array.isArray(post))
+    ? post as Record<string, unknown>
+    : root;
+
+  const unitsObj = candidateRoot.sistemaDeUnidades;
+  if (!unitsObj || typeof unitsObj !== 'object') return 0.01;
+
+  const momentoUnit = (unitsObj as Record<string, unknown>).momento;
+  if (typeof momentoUnit !== 'string') return 0.01;
+
+  const normalized = momentoUnit.replace(/\s+/g, '').toLowerCase();
+  return normalized.includes('kn*m') ? 1 : 0.01;
+};
+
 const extractPointsFromUnknown = (input: unknown): PontoDiagrama[] => {
   if (!Array.isArray(input)) return [];
 
@@ -312,17 +331,53 @@ export function Beam2DViewer({
     if (!resultadoProcessamento || typeof resultadoProcessamento !== 'object') return [];
 
     const root = resultadoProcessamento as Record<string, unknown>;
-    const discretizacaoRaw = root.discretizacao;
-    const discretizacao = Array.isArray(discretizacaoRaw)
-      ? discretizacaoRaw
+    const postProcessamento = root.posProcessamento
+      ?? root.pos_processamento
+      ?? root.postProcessamento
+      ?? root.post_processing;
+
+    const candidateRoot = (postProcessamento && typeof postProcessamento === 'object' && !Array.isArray(postProcessamento))
+      ? postProcessamento as Record<string, unknown>
+      : root;
+
+    const discretizacaoRaw = candidateRoot.discretizacao;
+    const discretizacaoEntries = Array.isArray(discretizacaoRaw)
+      ? discretizacaoRaw.map((item) => ({ item, label: null as string | null }))
       : (discretizacaoRaw && typeof discretizacaoRaw === 'object'
-        ? Object.values(discretizacaoRaw as Record<string, unknown>)
+        ? Object.entries(discretizacaoRaw as Record<string, unknown>).map(([label, item]) => ({ item, label }))
         : []);
-    if (!Array.isArray(discretizacao) || discretizacao.length === 0) return [];
+    if (discretizacaoEntries.length === 0) return [];
+
+    const elementosRaw = candidateRoot.elementos ?? root.elementos;
+    const elementos = Array.isArray(elementosRaw) ? elementosRaw : [];
+    const spanByElementLabel = new Map<string, { start: number; end: number }>();
+    const spanByElementOrder: Array<{ start: number; end: number }> = [];
+
+    const normalizeLabel = (value: string) => value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .toLowerCase();
+
+    elementos.forEach((elemento) => {
+      if (!elemento || typeof elemento !== 'object' || Array.isArray(elemento)) return;
+
+      const obj = elemento as Record<string, unknown>;
+      const label = typeof obj.label === 'string' ? obj.label : null;
+      const noI = obj.no_i;
+      const noJ = obj.no_j;
+      const start = noI && typeof noI === 'object' ? toNumber((noI as Record<string, unknown>).x) : null;
+      const end = noJ && typeof noJ === 'object' ? toNumber((noJ as Record<string, unknown>).x) : null;
+
+      if (label && start !== null && end !== null) {
+        spanByElementLabel.set(label, { start, end });
+        spanByElementOrder.push({ start, end });
+      }
+    });
 
     const points: PontoDiagrama[] = [];
 
-    discretizacao.forEach((item) => {
+    discretizacaoEntries.forEach(({ item, label: discretizacaoLabel }, discretizacaoIndex) => {
       if (!item || typeof item !== 'object' || Array.isArray(item)) return;
 
       const obj = item as Record<string, unknown>;
@@ -335,11 +390,24 @@ export function Beam2DViewer({
 
       const elementLabel = typeof obj.elementLabel === 'string'
         ? obj.elementLabel
-        : (typeof obj.label === 'string' ? obj.label : null);
+        : (typeof obj.label === 'string' ? obj.label : discretizacaoLabel);
 
-      const viga = elementLabel ? vigas.find((beam) => beam.id === elementLabel) : undefined;
-      const start = viga?.startPosition ?? 0;
-      const end = viga?.endPosition ?? 0;
+      const normalizedElementLabel = typeof elementLabel === 'string' ? normalizeLabel(elementLabel) : null;
+      const spanFromExactLabel = elementLabel ? spanByElementLabel.get(elementLabel) : undefined;
+      const spanFromNormalizedLabel = normalizedElementLabel
+        ? Array.from(spanByElementLabel.entries()).find(([key]) => normalizeLabel(key) === normalizedElementLabel)?.[1]
+        : undefined;
+      const spanFromOrder = spanByElementOrder[discretizacaoIndex];
+
+      const viga = elementLabel
+        ? (
+          vigas.find((beam) => beam.id === elementLabel)
+          ?? vigas.find((beam) => elementLabel.startsWith(`${beam.id}_`))
+        )
+        : undefined;
+      const spanFromElement = spanFromExactLabel ?? spanFromNormalizedLabel ?? spanFromOrder;
+      const start = spanFromElement?.start ?? viga?.startPosition ?? 0;
+      const end = spanFromElement?.end ?? viga?.endPosition ?? 0;
       const length = Math.abs(end - start);
 
       const xNumeric = xArray
@@ -347,22 +415,58 @@ export function Beam2DViewer({
         .filter((value): value is number => value !== null);
       const xMin = xNumeric.length > 0 ? Math.min(...xNumeric) : null;
       const xMax = xNumeric.length > 0 ? Math.max(...xNumeric) : null;
-      const isLocal = Boolean(viga) && length > 0 && xMin !== null && xMax !== null && xMin >= -1e-6 && xMax <= length + 1e-6;
+      const hasReferenceSpan = Boolean(viga) || Boolean(spanFromElement);
+      const isLocalLength = hasReferenceSpan && length > 0 && xMin !== null && xMax !== null && xMin >= -1e-6 && xMax <= length + 1e-6;
 
       for (let i = 0; i < xArray.length; i++) {
         const x = toNumber(xArray[i]);
         const valor = toNumber(yArray[i]);
         if (x === null || valor === null) continue;
 
-        const xGlobal = isLocal && viga
-          ? start + (x / length) * (end - start)
-          : x;
+        const xGlobal = isLocalLength ? start + (x / length) * (end - start) : x;
 
         points.push({ x: xGlobal, valor });
       }
     });
 
-    return points.sort((a, b) => a.x - b.x);
+    const sortedPoints = points.sort((a, b) => a.x - b.x);
+
+    if (sortedPoints.length < 2 || vigas.length === 0) {
+      return sortedPoints;
+    }
+
+    const beamPositions = vigas.flatMap((beam) => [beam.startPosition, beam.endPosition]);
+    const structureMin = Math.min(...beamPositions);
+    const structureMax = Math.max(...beamPositions);
+    const structureSpan = Math.abs(structureMax - structureMin);
+
+    const pointMin = sortedPoints[0].x;
+    const pointMax = sortedPoints[sortedPoints.length - 1].x;
+    const pointSpan = Math.abs(pointMax - pointMin);
+
+    if (structureSpan < 1e-6 || pointSpan < 1e-6) {
+      return sortedPoints;
+    }
+
+    const scales = [1, 10, 100, 1000, 0.1, 0.01];
+    let bestScale = 1;
+    let bestError = Math.abs(structureSpan - pointSpan);
+
+    scales.forEach((scale) => {
+      const scaledSpan = pointSpan * scale;
+      const error = Math.abs(structureSpan - scaledSpan);
+      if (error < bestError) {
+        bestError = error;
+        bestScale = scale;
+      }
+    });
+
+    const shouldScale = bestScale !== 1 && bestError <= structureSpan * 0.1;
+    if (!shouldScale) {
+      return sortedPoints;
+    }
+
+    return sortedPoints.map((point) => ({ ...point, x: point.x * bestScale }));
   };
 
   const getDiagramPoints = (): PontoDiagrama[] => {
@@ -375,10 +479,12 @@ export function Beam2DViewer({
     return points;
   };
 
-  const displayFactor = diagramaAtivo === 'momentoFletor' ? 0.01 : 1;
-  const signFactor = diagramaAtivo === 'momentoFletor' ? -1 : 1;
+  const displayFactor = diagramaAtivo === 'momentoFletor' ? getMomentoDisplayFactor(resultadoProcessamento) : 1;
+  const plotSignFactor = diagramaAtivo === 'momentoFletor' ? -1 : 1;
+  const valueSignFactor = 1;
   const unit = diagramaAtivo === 'esforcoCortante' ? 'kN' : 'kN*m';
-  const formatValue = (valor: number) => `${(valor * displayFactor * signFactor).toFixed(2)}`;
+  const diagramVerticalScale = 42;
+  const formatValue = (valor: number) => `${(valor * displayFactor * valueSignFactor).toFixed(2)}`;
   const diagramPoints = exibirDiagramas ? getDiagramPoints() : [];
 
   const handleDiagramMouseMove = (event: ReactMouseEvent<SVGSVGElement>) => {
@@ -396,7 +502,7 @@ export function Beam2DViewer({
     ));
 
     const maxAbs = Math.max(...diagramPoints.map((point) => Math.abs(point.valor)), 1);
-    const pointY = beamY - (nearestPoint.valor / maxAbs) * 28;
+    const pointY = beamY - ((nearestPoint.valor * plotSignFactor) / maxAbs) * diagramVerticalScale;
 
     setDiagramHover({
       x: nearestPoint.x,
@@ -691,9 +797,9 @@ export function Beam2DViewer({
 
           const maxAbs = Math.max(...points.map((point) => Math.abs(point.valor)), 1);
           const baseY = beamY;
-          const toDiagramY = (valor: number) => baseY - (valor / maxAbs) * 28;
+          const toDiagramY = (valor: number) => baseY - ((valor * plotSignFactor) / maxAbs) * diagramVerticalScale;
           const getLabelY = (pointY: number, preferredGap = 12) => {
-            const minDistanceFromBeam = 24;
+            const minDistanceFromBeam = 30;
             const isNearBeam = Math.abs(pointY - beamY) < minDistanceFromBeam;
             const isAboveBeam = pointY <= beamY;
 
@@ -725,8 +831,12 @@ export function Beam2DViewer({
             };
           });
 
-          const maxPoint = points.reduce((best, current) => (current.valor > best.valor ? current : best), points[0]);
-          const minPoint = points.reduce((best, current) => (current.valor < best.valor ? current : best), points[0]);
+          const maxPoint = points.reduce((best, current) => (
+            (current.valor * valueSignFactor) > (best.valor * valueSignFactor) ? current : best
+          ), points[0]);
+          const minPoint = points.reduce((best, current) => (
+            (current.valor * valueSignFactor) < (best.valor * valueSignFactor) ? current : best
+          ), points[0]);
           const tolerance = 1e-6;
           const isPointOnNode = (point: PontoDiagrama) => nodeAnnotations.some(
             (node) => Math.abs(node.x - point.x) < tolerance && Math.abs(node.valor - point.valor) < tolerance
