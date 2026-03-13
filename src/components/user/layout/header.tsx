@@ -43,10 +43,13 @@ export function Header() {
                 </div>
 
                 <div className="space-y-3 border-l border-border pl-8">
-                  <h3 className="text-sm font-semibold text-foreground">Outras</h3>
+                  <h3 className="text-sm font-semibold text-foreground">Outros</h3>
                   <div className="space-y-2 text-sm">
                     <a href="/dashboard/geometria" className="block text-muted-foreground hover:text-foreground">
                       Geometria
+                    </a>
+                    <a href="/dashboard/pilar-segunda-ordem-local" className="block text-muted-foreground hover:text-foreground">
+                      Pilar - Segunda ordem local
                     </a>
                   </div>
                 </div>
