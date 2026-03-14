@@ -1,8 +1,38 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
+
 import { Button } from '@/components/ui/button';
 
 export function Header() {
+  const [isApiMenuOpen, setIsApiMenuOpen] = useState(false);
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearCloseTimeout = () => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+  };
+
+  const openApiMenu = () => {
+    clearCloseTimeout();
+    setIsApiMenuOpen(true);
+  };
+
+  const scheduleCloseApiMenu = () => {
+    clearCloseTimeout();
+    closeTimeoutRef.current = setTimeout(() => {
+      setIsApiMenuOpen(false);
+    }, 180);
+  };
+
+  useEffect(() => {
+    return () => {
+      clearCloseTimeout();
+    };
+  }, []);
+
   return (
     <header className="border-b border-border bg-background">
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
@@ -21,12 +51,33 @@ export function Header() {
             <a href="#contact">Contato</a>
           </Button>
 
-          <div className="group relative">
+          <div
+            className="relative"
+            onMouseEnter={openApiMenu}
+            onMouseLeave={scheduleCloseApiMenu}
+            onFocusCapture={openApiMenu}
+            onBlurCapture={(event) => {
+              const nextFocused = event.relatedTarget as Node | null;
+              if (!event.currentTarget.contains(nextFocused)) {
+                scheduleCloseApiMenu();
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                clearCloseTimeout();
+                setIsApiMenuOpen(false);
+              }
+            }}
+          >
             <Button variant="ghost" asChild>
-              <a href="#api">API</a>
+              <a href="#api" aria-haspopup="menu" aria-expanded={isApiMenuOpen}>
+                API
+              </a>
             </Button>
 
-            <div className="hidden absolute right-0 top-full z-50 mt-2 w-[min(680px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-md border border-border bg-background p-4 shadow-sm group-hover:block md:left-1/2 md:right-auto md:-translate-x-1/2">
+            <div
+              className={`${isApiMenuOpen ? 'block' : 'hidden'} absolute right-0 top-full z-50 mt-2 w-[min(680px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-md border border-border bg-background p-4 shadow-sm`}
+            >
               <div className="grid grid-cols-2 gap-8">
                 <div className="space-y-3">
                   <h3 className="text-sm font-semibold text-foreground">

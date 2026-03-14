@@ -66,9 +66,8 @@ function GeometryReferenceFigure({
 
   return (
     <div className="rounded-md border border-border bg-muted/30 p-3">
-      <p className="mb-3 text-xs font-medium text-muted-foreground">Referencial geometrico</p>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-md border border-border bg-background p-2">
+      <div className="grid grid-cols-2 gap-1">
+        <div className="bg-background p-0">
           <svg viewBox="0 0 180 150" className="h-32 w-full" role="img" aria-label="Referencia de hx e hy na secao">
             <rect x="58" y="18" width="70" height="100" fill="none" stroke="currentColor" strokeWidth="3" />
 
@@ -90,7 +89,7 @@ function GeometryReferenceFigure({
           </svg>
         </div>
 
-        <div className="rounded-md border border-border bg-background p-2">
+        <div className="bg-background p-0">
           <svg viewBox="0 0 180 150" className="h-32 w-full" role="img" aria-label="Referencia do comprimento L do pilar">
             <line x1="92" y1="18" x2="92" y2="118" stroke="currentColor" strokeWidth="3" />
 
@@ -156,8 +155,7 @@ function ArmaduraReferenceFigure({ nx, ny, dlinha }: { nx: number; ny: number; d
 
   return (
     <div className="rounded-md border border-border bg-muted/30 p-3">
-      <p className="mb-3 text-xs font-medium text-muted-foreground">Referencial de armadura</p>
-      <div className="rounded-md border border-border bg-background p-2">
+      <div className="bg-background p-0">
         <svg viewBox="0 0 200 128" className="mx-auto h-40 w-[200px]" role="img" aria-label="Referencia de nx, ny e d' na secao armada">
           <defs>
             <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto-start-reverse">
@@ -205,7 +203,7 @@ function ArmaduraReferenceFigure({ nx, ny, dlinha }: { nx: number; ny: number; d
           <text x={dLineVerticalX + 8} y={yTop + coverPx / 2 + 4} fontSize="12" fontWeight="700">d'</text>
         </svg>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">nx e ny controlam a quantidade de barras por direcao; d' (atual: {dlinha} cm) define o cobrimento efetivo.</p>
+      <p className="mt-2 text-xs text-muted-foreground">nx e ny controlam a quantidade de barras por direção.</p>
     </div>
   );
 }
@@ -213,9 +211,8 @@ function ArmaduraReferenceFigure({ nx, ny, dlinha }: { nx: number; ny: number; d
 function EffortsGlobalReferenceFigure() {
   return (
     <div className="rounded-md border border-border bg-muted/30 p-3">
-      <p className="mb-3 text-xs font-medium text-muted-foreground">Referencial dos esforços</p>
       <div className="rounded-md border border-border bg-background p-2">
-        <svg viewBox="0 0 210 330" className="mx-auto h-[240px] w-[160px]" role="img" aria-label="Referencial global para N e momentos de topo e base">
+        <svg viewBox="0 0 210 240" className="mx-auto h-[160px] w-[160px]" role="img" aria-label="Referencial global para N e momentos de topo e base">
           <defs>
             <marker id="effort-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse">
               <path d="M0,0 L8,4 L0,8 Z" fill="#dc2626" />
@@ -224,8 +221,8 @@ function EffortsGlobalReferenceFigure() {
               <path d="M0,0 L6,4 L0,8 Z" fill="#dc2626" />
               <path d="M4,0 L10,4 L4,8 Z" fill="#dc2626" />
             </marker>
-            <marker id="axis-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse">
-              <path d="M0,0 L8,4 L0,8 Z" fill="currentColor" />
+            <marker id="axis-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto-start-reverse">
+              <path d="M0,0 L5,2.5 L0,5 Z" fill="currentColor" />
             </marker>
           </defs>
 
@@ -253,15 +250,63 @@ function EffortsGlobalReferenceFigure() {
           <line x1="104" y1="222" x2="148" y2="190" stroke="#dc2626" strokeWidth="2" markerEnd="url(#moment-arrow)" />
           <text x="134" y="186" fontSize="12" fill="#111827">My (Base)</text>
 
-          <line x1="18" y1="292" x2="82" y2="292" stroke="currentColor" strokeWidth="1.6" markerEnd="url(#axis-arrow)" />
-          <line x1="18" y1="292" x2="18" y2="232" stroke="currentColor" strokeWidth="1.6" markerEnd="url(#axis-arrow)" />
-          <line x1="18" y1="292" x2="54" y2="266" stroke="currentColor" strokeWidth="1.6" markerEnd="url(#axis-arrow)" />
-          <text x="84" y="297" fontSize="11">x</text>
-          <text x="11" y="226" fontSize="11">z</text>
-          <text x="56" y="264" fontSize="11">y</text>
+          <line x1="-12" y1="212" x2="18" y2="212" stroke="currentColor" strokeWidth="1.2" markerEnd="url(#axis-arrow)" />
+          <line x1="-12" y1="212" x2="-12" y2="182" stroke="currentColor" strokeWidth="1.2" markerEnd="url(#axis-arrow)" />
+          <line x1="-12" y1="212" x2="6" y2="194" stroke="currentColor" strokeWidth="1.2" markerEnd="url(#axis-arrow)" />
+          <text x="22" y="218" fontSize="11">x</text>
+          <text x="-8" y="186" fontSize="11">z</text>
+          <text x="10" y="198" fontSize="11">y</text>
         </svg>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">Os esforços de entrada seguem o eixo de referência global (x, y, z), não o referencial local da barra.</p>
+      <p className="mt-2 text-xs text-muted-foreground">Os esforços de entrada seguem o eixo de referência global (x, y, z)</p>
+    </div>
+  );
+}
+
+function TransversalSection2DFigure({ hx, hy }: { hx: number; hy: number }) {
+  return (
+    <div className="rounded-md border border-border bg-muted/30 p-3">
+      <svg viewBox="0 0 340 280" className="mx-auto h-[280px] w-full max-w-[360px]" role="img" aria-label="Seção transversal 2D com cotas hx e hy">
+        <line x1="64" y1="208" x2="276" y2="208" stroke="currentColor" strokeWidth="1.5" />
+        <line x1="64" y1="208" x2="64" y2="30" stroke="currentColor" strokeWidth="1.5" />
+
+        <line x1="68" y1="204" x2="64" y2="208" stroke="currentColor" strokeWidth="1.5" />
+        <line x1="68" y1="212" x2="64" y2="208" stroke="currentColor" strokeWidth="1.5" />
+        <line x1="272" y1="204" x2="276" y2="208" stroke="currentColor" strokeWidth="1.5" />
+        <line x1="272" y1="212" x2="276" y2="208" stroke="currentColor" strokeWidth="1.5" />
+        <line x1="60" y1="34" x2="64" y2="30" stroke="currentColor" strokeWidth="1.5" />
+        <line x1="68" y1="34" x2="64" y2="30" stroke="currentColor" strokeWidth="1.5" />
+
+        <text x="286" y="230" fontSize="12">x (cm)</text>
+        <text x="68" y="24" fontSize="12">y (cm)</text>
+
+        <rect x="72" y="56" width="160" height="152" fill="none" stroke="currentColor" strokeWidth="2.2" />
+
+        <circle cx="96" cy="80" r="2.8" fill="currentColor" />
+        <circle cx="208" cy="80" r="2.8" fill="currentColor" />
+        <circle cx="96" cy="184" r="2.8" fill="currentColor" />
+        <circle cx="208" cy="184" r="2.8" fill="currentColor" />
+
+        <line x1="48" y1="56" x2="48" y2="208" stroke="currentColor" strokeWidth="1" />
+        <line x1="42" y1="56" x2="54" y2="56" stroke="currentColor" strokeWidth="1" />
+        <line x1="42" y1="208" x2="54" y2="208" stroke="currentColor" strokeWidth="1" />
+        <text x="24" y="136" fontSize="16">{hy}</text>
+
+        <line x1="72" y1="224" x2="232" y2="224" stroke="currentColor" strokeWidth="1" />
+        <line x1="72" y1="218" x2="72" y2="230" stroke="currentColor" strokeWidth="1" />
+        <line x1="232" y1="218" x2="232" y2="230" stroke="currentColor" strokeWidth="1" />
+        <text x="146" y="244" fontSize="16">{hx}</text>
+
+        <g className="text-destructive">
+          <line x1="154" y1="144" x2="186" y2="144" stroke="currentColor" strokeWidth="2" />
+          <polygon points="186,144 178,140 178,148" fill="currentColor" />
+          <text x="162" y="138" fontSize="12" fill="currentColor">Mx</text>
+
+          <line x1="154" y1="144" x2="154" y2="112" stroke="currentColor" strokeWidth="2" />
+          <polygon points="154,112 150,120 158,120" fill="currentColor" />
+          <text x="160" y="114" fontSize="12" fill="currentColor">My</text>
+        </g>
+      </svg>
     </div>
   );
 }
@@ -274,10 +319,10 @@ function LeftActionButtons({
   onOpenOptions: () => void;
 }) {
   return (
-    <div className="fixed left-4 top-1/2 z-50 flex -translate-y-1/2 flex-col gap-2">
+    <div className="flex flex-wrap gap-2">
       <Button
         variant="outline"
-        className="h-12 rounded-full border-2 bg-background px-4 shadow-md"
+        className="h-9 rounded-md border bg-background px-3 text-xs"
         aria-label="Abrir inputs"
         onClick={onOpenInputs}
         type="button"
@@ -286,7 +331,7 @@ function LeftActionButtons({
       </Button>
       <Button
         variant="outline"
-        className="h-12 rounded-full border-2 bg-background px-4 shadow-md"
+        className="h-9 rounded-md border bg-background px-3 text-xs"
         aria-label="Abrir opcoes"
         onClick={onOpenOptions}
         type="button"
@@ -308,6 +353,7 @@ export default function PilarSegundaOrdemLocalPage() {
     armadura: false,
     esforcos: false,
   });
+  const [methodModalOpen, setMethodModalOpen] = useState(false);
   const [form, setForm] = useState(DEFAULT_FORM);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -413,65 +459,93 @@ export default function PilarSegundaOrdemLocalPage() {
   };
 
   return (
-    <main className="relative mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
-      <LeftActionButtons
-        onOpenInputs={() => setInputSheetOpen(true)}
-        onOpenOptions={() => setOptionsSheetOpen(true)}
-      />
-
+    <main className="relative flex h-screen w-screen flex-col gap-4 overflow-hidden p-4 md:gap-6 md:p-6">
       <Sheet open={optionsSheetOpen} onOpenChange={setOptionsSheetOpen}>
         <SheetContent side="left" className="w-[320px] overflow-y-auto sm:w-[420px]">
           <SheetHeader>
             <SheetTitle>Opções</SheetTitle>
           </SheetHeader>
-          <div className="mt-6" />
+          <section className="mt-6 rounded-lg border border-border p-4">
+            <Button type="button" className="w-full mb-2" onClick={() => setMethodModalOpen(true)}>
+              Método de Cálculo
+            </Button>
+          </section>
+          {/* ...outros itens de opções... */}
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={methodModalOpen} onOpenChange={setMethodModalOpen}>
+        <SheetContent side="top" className="max-w-md mx-auto">
+          <SheetHeader>
+            <SheetTitle>Método de cálculo para 2ª Ordem</SheetTitle>
+          </SheetHeader>
+          <section className="mt-6 rounded-lg border border-border p-4">
+            <Select value={method} onValueChange={(value: Method) => setMethod(value as Method)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecione o método" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="curvatura-aproximada">Curvatura Aproximada</SelectItem>
+                <SelectItem value="rigidez-k-aproximada">Rigidez K Aproximada</SelectItem>
+              </SelectContent>
+            </Select>
+          </section>
         </SheetContent>
       </Sheet>
 
       <Sheet open={inputSheetOpen} onOpenChange={setInputSheetOpen}>
         <SheetContent side="right" className="w-[380px] overflow-y-auto sm:w-[520px]">
           <SheetHeader>
-            <SheetTitle>Entradas do pilar</SheetTitle>
+            <SheetTitle className="text-xs">Entradas do pilar</SheetTitle>
             <div className="mt-2 flex items-center gap-2">
               {(Object.keys(INPUT_SECTION_LABELS) as InputSection[]).map((sectionKey) => {
-                const isConfirmed = confirmedSections[sectionKey];
+                const icon = {
+                  geometria: 'G',
+                  materiais: 'M',
+                  armadura: 'A',
+                  esforcos: 'E',
+                }[sectionKey];
                 const isActive = inputSection === sectionKey;
-
+                const isConfirmed = confirmedSections[sectionKey];
                 return (
                   <button
                     key={sectionKey}
                     type="button"
+                    className={`w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-bold border transition-all
+                      ${isActive ? 'bg-primary text-white border-primary' : 'bg-muted text-foreground border-border'}
+                      ${isConfirmed ? 'ring-2 ring-green-500 border-green-500' : ''}`}
                     onClick={() => setInputSection(sectionKey)}
-                    className={`inline-flex h-7 w-7 items-center justify-center rounded-sm border text-xs font-bold transition-colors ${
-                      isConfirmed
-                        ? 'border-green-600 bg-green-600 text-white'
-                        : 'border-muted-foreground/40 bg-background text-muted-foreground'
-                    } ${isActive ? 'ring-1 ring-primary ring-offset-1' : ''}`}
-                    title={INPUT_SECTION_LABELS[sectionKey]}
-                    aria-label={INPUT_SECTION_LABELS[sectionKey]}
                   >
-                    {isConfirmed ? '✓' : INPUT_SECTION_LABELS[sectionKey].charAt(0)}
+                    {icon}
                   </button>
                 );
               })}
+              <Button
+                type="button"
+                onClick={runCalculation}
+                disabled={loading || !Object.values(confirmedSections).every(Boolean)}
+                className="ml-4 h-8 px-4 text-sm"
+              >
+                {loading ? 'Calculando...' : 'Calcular'}
+              </Button>
             </div>
           </SheetHeader>
 
-          <div className="mt-6 space-y-6">
+          <div className="mt-6 space-y-6 text-[11px]">
             <section className="space-y-3 rounded-lg border border-border p-4">
               <h3 className="text-sm font-semibold">Seções de entrada</h3>
               <Select value={inputSection} onValueChange={(value: InputSection) => setInputSection(value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a secao" />
+                <SelectTrigger className="text-[11px]">
+                  <SelectValue placeholder="Selecione a secao" className="text-[11px]" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="geometria">Geometria</SelectItem>
-                  <SelectItem value="materiais">Materiais</SelectItem>
-                  <SelectItem value="armadura">Armadura</SelectItem>
-                  <SelectItem value="esforcos">Esforços</SelectItem>
+                  <SelectItem value="geometria" className="text-[11px]">Geometria</SelectItem>
+                  <SelectItem value="materiais" className="text-[11px]">Materiais</SelectItem>
+                  <SelectItem value="armadura" className="text-[11px]">Armadura</SelectItem>
+                  <SelectItem value="esforcos" className="text-[11px]">Esforços</SelectItem>
                 </SelectContent>
               </Select>
-              <Button type="button" onClick={confirmCurrentSection} className="w-full">
+              <Button type="button" onClick={confirmCurrentSection} className="w-full text-[11px]">
                 Confirmar {INPUT_SECTION_LABELS[inputSection]}
               </Button>
             </section>
@@ -482,26 +556,26 @@ export default function PilarSegundaOrdemLocalPage() {
                 <GeometryReferenceFigure hx={form.hx} hy={form.hy} length={form.L} geometry={form.geometry} />
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label htmlFor="hx">h<sub>x</sub> (cm)</Label>
-                    <Input id="hx" type="number" min={0} value={form.hx} onChange={(e) => updateNumber('hx', e.target.valueAsNumber)} step="any" />
+                    <Label htmlFor="hx" className="text-[11px]">h<sub>x</sub> (cm)</Label>
+                    <Input id="hx" type="number" min={0} value={form.hx} onChange={(e) => updateNumber('hx', e.target.valueAsNumber)} step="any" className="text-[11px] py-1" />
                   </div>
                   <div>
-                    <Label htmlFor="hy">h<sub>y</sub> (cm)</Label>
-                    <Input id="hy" type="number" min={0} value={form.hy} onChange={(e) => updateNumber('hy', e.target.valueAsNumber)} step="any" />
+                    <Label htmlFor="hy" className="text-[11px]">h<sub>y</sub> (cm)</Label>
+                    <Input id="hy" type="number" min={0} value={form.hy} onChange={(e) => updateNumber('hy', e.target.valueAsNumber)} step="any" className="text-[11px] py-1" />
                   </div>
                   <div>
-                    <Label htmlFor="l">L (cm)</Label>
-                    <Input id="l" type="number" min={0} value={form.L} onChange={(e) => updateNumber('L', e.target.valueAsNumber)} step="any" />
+                    <Label htmlFor="l" className="text-[11px]">L (cm)</Label>
+                    <Input id="l" type="number" min={0} value={form.L} onChange={(e) => updateNumber('L', e.target.valueAsNumber)} step="any" className="text-[11px] py-1" />
                   </div>
                   <div>
-                    <Label>Vinculação</Label>
+                    <Label className="text-[11px]">Vinculação</Label>
                     <Select value={form.geometry} onValueChange={(value: 'biapoiado' | 'balanco') => setForm((prev) => ({ ...prev, geometry: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
+                      <SelectTrigger className="text-[11px] py-1">
+                        <SelectValue placeholder="Selecione" className="text-[11px]" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="biapoiado">Biapoiado</SelectItem>
-                        <SelectItem value="balanco">Engastado</SelectItem>
+                        <SelectItem value="biapoiado" className="text-[11px]">Biapoiado</SelectItem>
+                        <SelectItem value="balanco" className="text-[11px]">Engastado</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -510,8 +584,8 @@ export default function PilarSegundaOrdemLocalPage() {
             )}
 
             {inputSection === 'materiais' && (
-              <section className="space-y-3 rounded-lg border border-border p-4">
-                <h3 className="text-sm font-semibold">Materiais</h3>
+              <section className="space-y-2 rounded-lg border border-border p-2">
+                <h3 className="text-xs font-semibold">Materiais</h3>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Concreto</Label>
@@ -527,58 +601,58 @@ export default function PilarSegundaOrdemLocalPage() {
                     </Select>
                   </div>
                   <div>
-                    <Label>Aco</Label>
+                    <Label className="text-xs">Aço</Label>
                     <Select value={form.steel} onValueChange={(value: 'CA-50' | 'CA-60') => setForm((prev) => ({ ...prev, steel: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
+                      <SelectTrigger className="text-xs py-1">
+                        <SelectValue placeholder="Selecione" className="text-xs" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="CA-50">CA-50</SelectItem>
-                        <SelectItem value="CA-60">CA-60</SelectItem>
+                        <SelectItem value="CA-50" className="text-xs">CA-50</SelectItem>
+                        <SelectItem value="CA-60" className="text-xs">CA-60</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="yc">γ<sub>c</sub> (concreto)</Label>
-                    <Input id="yc" type="number" min={0} value={form.yc} onChange={(e) => updateNumber('yc', e.target.valueAsNumber)} step="any" />
+                    <Label htmlFor="yc" className="text-xs">γ<sub>c</sub> (concreto)</Label>
+                    <Input id="yc" type="number" min={0} value={form.yc} onChange={(e) => updateNumber('yc', e.target.valueAsNumber)} step="any" className="text-xs py-1" />
                   </div>
                   <div>
-                    <Label htmlFor="gammas">γ<sub>s</sub> (aco)</Label>
-                    <Input id="gammas" type="number" min={0} value={form.gammas} onChange={(e) => updateNumber('gammas', e.target.valueAsNumber)} step="any" />
+                    <Label htmlFor="gammas" className="text-xs">γ<sub>s</sub> (aço)</Label>
+                    <Input id="gammas" type="number" min={0} value={form.gammas} onChange={(e) => updateNumber('gammas', e.target.valueAsNumber)} step="any" className="text-xs py-1" />
                   </div>
                 </div>
               </section>
             )}
 
             {inputSection === 'armadura' && (
-              <section className="space-y-3 rounded-lg border border-border p-4">
-                <h3 className="text-sm font-semibold">Armadura</h3>
+              <section className="space-y-2 rounded-lg border border-border p-2">
+                <h3 className="text-xs font-semibold">Armadura</h3>
                 <ArmaduraReferenceFigure nx={form.nx} ny={form.ny} dlinha={form.dlinha} />
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label htmlFor="diameter">Diametro (mm)</Label>
+                    <Label htmlFor="diameter" className="text-xs">Diâmetro (mm)</Label>
                     <Select
                       value={String(form.diameter)}
                       onValueChange={(value) => updateNumber('diameter', Number(value))}
                     >
-                      <SelectTrigger id="diameter">
-                        <SelectValue placeholder="Selecione o diametro" />
+                      <SelectTrigger id="diameter" className="text-xs py-1">
+                        <SelectValue placeholder="Selecione o diâmetro" className="text-xs" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="8">8</SelectItem>
-                        <SelectItem value="10">10</SelectItem>
-                        <SelectItem value="12.5">12.5</SelectItem>
-                        <SelectItem value="16">16</SelectItem>
-                        <SelectItem value="20">20</SelectItem>
-                        <SelectItem value="25">25</SelectItem>
-                        <SelectItem value="32">32</SelectItem>
-                        <SelectItem value="40">40</SelectItem>
+                        <SelectItem value="8" className="text-xs">8</SelectItem>
+                        <SelectItem value="10" className="text-xs">10</SelectItem>
+                        <SelectItem value="12.5" className="text-xs">12.5</SelectItem>
+                        <SelectItem value="16" className="text-xs">16</SelectItem>
+                        <SelectItem value="20" className="text-xs">20</SelectItem>
+                        <SelectItem value="25" className="text-xs">25</SelectItem>
+                        <SelectItem value="32" className="text-xs">32</SelectItem>
+                        <SelectItem value="40" className="text-xs">40</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="dlinha">d' (cm)</Label>
-                    <Input id="dlinha" type="number" min={0} value={form.dlinha} onChange={(e) => updateNumber('dlinha', e.target.valueAsNumber)} step="any" />
+                    <Label htmlFor="dlinha" className="text-xs">d' (cm)</Label>
+                    <Input id="dlinha" type="number" min={0} value={form.dlinha} onChange={(e) => updateNumber('dlinha', e.target.valueAsNumber)} step="any" className="text-xs py-1" />
                   </div>
                   <div>
                     <Label htmlFor="nx">n<sub>x</sub></Label>
@@ -629,65 +703,96 @@ export default function PilarSegundaOrdemLocalPage() {
         </SheetContent>
       </Sheet>
 
-      <section className="rounded-xl border border-border bg-card p-6">
-        <h1 className="text-2xl font-bold text-foreground">Pilar - Segunda ordem local</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Clique no icone lateral para abrir o menu de entrada e ajustar os parametros do calculo.
-        </p>
-      </section>
-
-      <section className="rounded-xl border border-border bg-card p-6">
-        <h2 className="text-lg font-semibold text-foreground">Metodo</h2>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button
-            variant={method === 'curvatura-aproximada' ? 'default' : 'outline'}
-            onClick={() => setMethod('curvatura-aproximada')}
-            type="button"
-          >
-            Curvatura aproximada
-          </Button>
-          <Button
-            variant={method === 'rigidez-k-aproximada' ? 'default' : 'outline'}
-            onClick={() => setMethod('rigidez-k-aproximada')}
-            type="button"
-          >
-            Rigidez K aproximada
-          </Button>
+      <div className="shrink-0 rounded-xl border border-border bg-card p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Pilar - Segunda ordem local</h1>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Clique no icone lateral para abrir o menu de entrada e ajustar os parametros do calculo.
+            </p>
+          </div>
+          <div className="shrink-0">
+            <LeftActionButtons
+              onOpenInputs={() => setInputSheetOpen(true)}
+              onOpenOptions={() => setOptionsSheetOpen(true)}
+            />
+          </div>
         </div>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Endpoint atual: <span className="font-mono text-foreground">{endpoint}</span>
-        </p>
-      </section>
+      </div>
 
-      <section className="rounded-xl border border-border bg-card p-6">
-        <h2 className="text-lg font-semibold text-foreground">Payload gerado automaticamente</h2>
-        <pre className="mt-4 max-h-[420px] overflow-auto rounded-md border border-input bg-background p-3 text-sm">
-          {JSON.stringify(payload, null, 2)}
-        </pre>
-        <div className="mt-4 flex items-center gap-3">
-          <Button onClick={runCalculation} type="button" disabled={loading}>
-            {loading ? 'Calculando...' : 'Calcular'}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setForm(DEFAULT_FORM)}
-            type="button"
-            disabled={loading}
-          >
-            Restaurar entradas
-          </Button>
+      <div className="grid min-h-0 w-full flex-1 grid-cols-1 gap-6 overflow-hidden xl:grid-cols-3">
+        <div className="flex min-h-0 min-w-0 flex-col gap-6 overflow-hidden">
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-6 xl:flex-1">
+            <h2 className="text-base font-semibold text-foreground">Seção Transversal</h2>
+            <div className="mt-4 min-h-0 flex-1 overflow-auto">
+              {confirmedSections.geometria && confirmedSections.armadura ? (
+                <TransversalSection2DFigure hx={form.hx} hy={form.hy} />
+              ) : (
+                <div className="rounded-md border border-input bg-background p-4 text-xs text-muted-foreground">
+                  Defina e confirme Geometria e Armadura para visualizar a seção transversal.
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-6 xl:flex-1">
+            <h2 className="text-base font-semibold text-foreground">Esforços</h2>
+          </section>
         </div>
-        {errorMessage && (
-          <p className="mt-3 text-sm font-medium text-red-600">{errorMessage}</p>
-        )}
-      </section>
 
-      <section className="rounded-xl border border-border bg-card p-6">
-        <h2 className="text-lg font-semibold text-foreground">Resposta</h2>
-        <pre className="mt-4 max-h-[480px] overflow-auto rounded-md border border-input bg-background p-3 text-sm">
-          {JSON.stringify(responseData, null, 2) || 'Nenhuma resposta ainda.'}
-        </pre>
-      </section>
+        <div className="flex min-h-0 min-w-0 flex-col gap-6 overflow-hidden">
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-6 xl:flex-1">
+            <h2 className="text-base font-semibold text-foreground">Resultados</h2>
+            <pre className="mt-4 min-h-0 flex-1 overflow-auto rounded-md border border-input bg-background p-3 text-xs">
+              {JSON.stringify(responseData, null, 2) || 'Nenhuma resposta ainda.'}
+            </pre>
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-6 xl:flex-1">
+            <h2 className="text-base font-semibold text-foreground">Diagramas</h2>
+            <div className="mt-4 rounded-md border border-input bg-background p-4 text-xs text-muted-foreground">
+              Diagramas ainda não disponíveis para visualização nesta tela.
+            </div>
+          </section>
+        </div>
+
+        <div className="flex min-h-0 min-w-0 flex-col gap-6 overflow-hidden">
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-6 xl:flex-1">
+            <h2 className="text-base font-semibold text-foreground">Chamada para API</h2>
+            <div className="mt-4 min-h-0 flex-1 overflow-auto">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant={method === 'curvatura-aproximada' ? 'default' : 'outline'}
+                  onClick={() => setMethod('curvatura-aproximada')}
+                  type="button"
+                >
+                  Curvatura aproximada
+                </Button>
+                <Button
+                  variant={method === 'rigidez-k-aproximada' ? 'default' : 'outline'}
+                  onClick={() => setMethod('rigidez-k-aproximada')}
+                  type="button"
+                >
+                  Rigidez K aproximada
+                </Button>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Endpoint atual: <span className="font-mono text-foreground">{endpoint}</span>
+              </p>
+              <pre className="mt-4 overflow-auto rounded-md border border-input bg-background p-3 text-xs">
+                {JSON.stringify(payload, null, 2)}
+              </pre>
+                    <div>
+                      <div className="mt-4 flex items-center gap-3">
+                      </div>
+                    </div>
+              {errorMessage && (
+                <p className="mt-3 text-xs font-medium text-red-600">{errorMessage}</p>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
     </main>
   );
 }

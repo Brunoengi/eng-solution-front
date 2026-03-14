@@ -538,8 +538,8 @@ export default function FnsPage() {
     setProcessingStructureMessage(null);
     setResultadoProcessamento(null);
 
-    const apiBaseUrl = process.env.NEXT_PUBLIC_ESTRUTURA_API_URL ?? '';
-    const apiPath = process.env.NEXT_PUBLIC_ESTRUTURA_API_PATH ?? '/api/beam2d/system';
+    const apiBaseUrl = process.env.NEXT_PUBLIC_ESTRUTURA_API_URL ?? 'http://localhost:3001';
+    const apiPath = process.env.NEXT_PUBLIC_ESTRUTURA_API_PATH ?? '/beam2d/system';
 
     const eModulo = Number(process.env.NEXT_PUBLIC_BEAM_E ?? 210_000);
 
