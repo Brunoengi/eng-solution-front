@@ -34,6 +34,7 @@ export interface MenuItem {
   href?: string;
   icon: LucideIcon;
   items?: MenuItem[];
+  onClick?: () => void;
 }
 
 interface AppSidebarProps {
@@ -109,15 +110,24 @@ function MenuItemComponent({ item }: { item: MenuItem }) {
     );
   }
 
-  // Se não tem subitens, renderiza como link
+  // Se não tem subitens, renderiza como link ou button
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton asChild className="hover:bg-accent rounded-md">
-        <Link href={item.href || '#'}>
-          <Icon className="mr-2 h-4 w-4" />
-          <span className="text-sm">{item.label}</span>
-        </Link>
-      </SidebarMenuButton>
+      {item.onClick ? (
+        <SidebarMenuButton asChild className="hover:bg-accent rounded-md cursor-pointer">
+          <button type="button" onClick={item.onClick} className="flex w-full items-center">
+            <Icon className="mr-2 h-4 w-4" />
+            <span className="text-sm">{item.label}</span>
+          </button>
+        </SidebarMenuButton>
+      ) : (
+        <SidebarMenuButton asChild className="hover:bg-accent rounded-md">
+          <Link href={item.href || '#'}>
+            <Icon className="mr-2 h-4 w-4" />
+            <span className="text-sm">{item.label}</span>
+          </Link>
+        </SidebarMenuButton>
+      )}
     </SidebarMenuItem>
   );
 }

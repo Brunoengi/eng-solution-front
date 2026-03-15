@@ -1,11 +1,14 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { SidebarProvider } from '@/components/ui/sidebar';
+import { AppSidebar, SidebarToggleButton, type MenuItem } from '@/components/user/molecules/sidebar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Settings, FileText, Package2 } from 'lucide-react';
 
 const DEFAULT_FORM = {
   hx: 30,
@@ -311,38 +314,26 @@ function TransversalSection2DFigure({ hx, hy }: { hx: number; hy: number }) {
   );
 }
 
-function LeftActionButtons({
-  onOpenInputs,
-  onOpenOptions,
-}: {
-  onOpenInputs: () => void;
-  onOpenOptions: () => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      <Button
-        variant="outline"
-        className="h-9 rounded-md border bg-background px-3 text-xs"
-        aria-label="Abrir inputs"
-        onClick={onOpenInputs}
-        type="button"
-      >
-        Inputs
-      </Button>
-      <Button
-        variant="outline"
-        className="h-9 rounded-md border bg-background px-3 text-xs"
-        aria-label="Abrir opcoes"
-        onClick={onOpenOptions}
-        type="button"
-      >
-        Opções
-      </Button>
-    </div>
-  );
-}
-
 export default function PilarSegundaOrdemLocalPage() {
+  const menuItems: MenuItem[] = [
+    {
+      label: 'Dados de Entrada',
+      icon: Package2,
+      onClick: () => setInputSheetOpen(true),
+    },
+    {
+      label: 'Opções',
+      icon: Settings,
+      items: [
+        { label: 'Método de Cálculo', onClick: () => setMethodModalOpen(true), icon: FileText },
+      ],
+    },
+  ];
+
+  const configItems: MenuItem[] = [
+    { label: 'Configurações', href: '/settings', icon: Settings },
+  ];
+
   const [method, setMethod] = useState<Method>('curvatura-aproximada');
   const [inputSheetOpen, setInputSheetOpen] = useState(false);
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
@@ -459,8 +450,16 @@ export default function PilarSegundaOrdemLocalPage() {
   };
 
   return (
-    <main className="relative flex h-screen w-screen flex-col gap-4 overflow-hidden p-4 md:gap-6 md:p-6">
-      <Sheet open={optionsSheetOpen} onOpenChange={setOptionsSheetOpen}>
+    <SidebarProvider defaultOpen={false}>
+      <SidebarToggleButton />
+      <AppSidebar 
+        menuItems={menuItems}
+        configItems={configItems}
+        menuGroupLabel="Seção Principal"
+        configGroupLabel="Configurações"
+      />
+      <main className="relative flex h-screen w-full flex-col gap-4 overflow-hidden p-4 md:gap-6 md:p-6 flex-1">
+        <Sheet open={optionsSheetOpen} onOpenChange={setOptionsSheetOpen}>
         <SheetContent side="left" className="w-[320px] overflow-y-auto sm:w-[420px]">
           <SheetHeader>
             <SheetTitle>Opções</SheetTitle>
@@ -708,14 +707,8 @@ export default function PilarSegundaOrdemLocalPage() {
           <div>
             <h1 className="text-xl font-bold text-foreground">Pilar - Segunda ordem local</h1>
             <p className="mt-2 text-xs text-muted-foreground">
-              Clique no icone lateral para abrir o menu de entrada e ajustar os parametros do calculo.
+              Clique no menu lateral para abrir os dados de entrada e ajustar os parametros do calculo.
             </p>
-          </div>
-          <div className="shrink-0">
-            <LeftActionButtons
-              onOpenInputs={() => setInputSheetOpen(true)}
-              onOpenOptions={() => setOptionsSheetOpen(true)}
-            />
           </div>
         </div>
       </div>
@@ -794,5 +787,6 @@ export default function PilarSegundaOrdemLocalPage() {
         </div>
       </div>
     </main>
+    </SidebarProvider>
   );
 }
