@@ -1,14 +1,14 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar, SidebarToggleButton, type MenuItem } from '@/components/user/molecules/sidebar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Settings, FileText, Package2 } from 'lucide-react';
+import { useSidebar } from '@/components/ui/sidebar';
+import { Settings, FileText, Package2, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 
 const DEFAULT_FORM = {
   hx: 30,
@@ -33,12 +33,20 @@ const DEFAULT_FORM = {
 
 type Method = 'curvatura-aproximada' | 'rigidez-k-aproximada';
 type InputSection = 'geometria' | 'materiais' | 'armadura' | 'esforcos';
+type SecondaryDock = 'none' | 'entradas' | 'metodo' | 'memorial' | 'units';
+type MemorialSection = 'apiCall' | 'apiOutput';
+type MomentUnit = 'kN*m' | 'kN*cm';
 
 const INPUT_SECTION_LABELS: Record<InputSection, string> = {
   geometria: 'Geometria',
   materiais: 'Materiais',
   armadura: 'Armadura',
   esforcos: 'Esforços',
+};
+
+const MEMORIAL_SECTION_LABELS: Record<MemorialSection, string> = {
+  apiCall: 'Chamada na API',
+  apiOutput: 'Saída da API',
 };
 
 const CONCRETE_CLASSES = Array.from({ length: 15 }, (_, index) => 20 + index * 5);
@@ -53,6 +61,124 @@ const NON_NEGATIVE_FIELDS: ReadonlySet<keyof typeof DEFAULT_FORM> = new Set([
   'nx',
   'ny',
 ]);
+
+const GEOMETRY_FIELDS: ReadonlySet<keyof typeof DEFAULT_FORM> = new Set([
+  'hx',
+  'hy',
+  'L',
+]);
+
+const SIDEBAR_HEADER_SIZE_CLASS = 'min-h-[125px]';
+const MEMORIAL_ENDPOINT = '/api/memorial/generate';
+const BACKEND_MOMENT_UNIT: MomentUnit = 'kN*cm';
+
+const TYPOGRAPHY = {
+  pageTitle: 'text-xl font-bold text-foreground',
+  panelTitle: 'text-base font-semibold text-foreground',
+  sectionTitle: 'text-xs font-semibold',
+  helper: 'text-xs text-muted-foreground',
+  panelHelper: 'text-sm text-muted-foreground',
+  label: 'text-[10px]',
+  control: 'text-[11px]',
+  compactControl: 'text-xs',
+  marker: 'text-[9px]',
+  error: 'text-xs font-medium text-red-600',
+};
+
+function buildPerimeterBars({
+  xLeft,
+  yTop,
+  xRight,
+  yBottom,
+  nx,
+  ny,
+}: {
+  xLeft: number;
+  yTop: number;
+  xRight: number;
+  yBottom: number;
+  nx: number;
+  ny: number;
+}) {
+  const xCount = Math.max(2, Math.round(nx));
+  const yCount = Math.max(2, Math.round(ny));
+
+  const xBars = Array.from(
+    { length: xCount },
+    (_, index) => xLeft + (index * (xRight - xLeft)) / (xCount - 1),
+  );
+  const yBars = Array.from(
+    { length: yCount },
+    (_, index) => yTop + (index * (yBottom - yTop)) / (yCount - 1),
+  );
+
+  const bars: Array<{ x: number; y: number }> = [];
+
+  for (const x of xBars) {
+    bars.push({ x, y: yTop });
+    bars.push({ x, y: yBottom });
+  }
+
+  for (const y of yBars.slice(1, -1)) {
+    bars.push({ x: xLeft, y });
+    bars.push({ x: xRight, y });
+  }
+
+  return bars;
+}
+
+function getByPath(source: unknown, path: string): unknown {
+  if (!source || typeof source !== 'object') {
+    return undefined;
+  }
+
+  return path.split('.').reduce<unknown>((acc, segment) => {
+    if (!acc || typeof acc !== 'object') {
+      return undefined;
+    }
+
+    return (acc as Record<string, unknown>)[segment];
+  }, source);
+}
+
+function extractFirstNumber(source: unknown, paths: string[]): number | null {
+  for (const path of paths) {
+    const value = getByPath(source, path);
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
+function formatEffortNumber(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) {
+    return '-';
+  }
+
+  return Number(value.toFixed(2)).toString();
+}
+
+function convertMomentUnitValue(value: number, from: MomentUnit, to: MomentUnit): number {
+  if (from === to) {
+    return value;
+  }
+
+  if (from === 'kN*m' && to === 'kN*cm') {
+    return value * 100;
+  }
+
+  return value / 100;
+}
 
 function GeometryReferenceFigure({
   hx,
@@ -144,8 +270,14 @@ function ArmaduraReferenceFigure({ nx, ny, dlinha }: { nx: number; ny: number; d
   const xRight = xLeft + width;
   const yBottom = yTop + height;
   const coverPx = Math.max(8, Math.min(16, dlinha * 1.6));
-  const xBars = [xLeft + coverPx, xLeft + width / 2, xRight - coverPx];
-  const yBars = Array.from({ length: 4 }, (_, i) => yTop + coverPx + (i * (height - 2 * coverPx)) / 3);
+  const bars = buildPerimeterBars({
+    xLeft: xLeft + coverPx,
+    yTop: yTop + coverPx,
+    xRight: xRight - coverPx,
+    yBottom: yBottom - coverPx,
+    nx,
+    ny,
+  });
   const topRightBarX = xRight - coverPx;
   const topRightBarY = yTop + coverPx;
   const nxNyOffset = 8;
@@ -173,11 +305,9 @@ function ArmaduraReferenceFigure({ nx, ny, dlinha }: { nx: number; ny: number; d
 
           <rect x={xLeft} y={yTop} width={width} height={height} fill="none" stroke="currentColor" strokeWidth="2.2" />
 
-          {yBars.map((y, rowIndex) =>
-            xBars.map((x, colIndex) => (
-              <circle key={`bar-${rowIndex}-${colIndex}`} cx={x} cy={y} r="2.5" fill="#1d4ed8" />
-            ))
-          )}
+          {bars.map((bar, index) => (
+            <circle key={`bar-${index}`} cx={bar.x} cy={bar.y} r="2.5" fill="#1d4ed8" />
+          ))}
 
           <line x1={xLeft} y1={nxLineY} x2={xRight} y2={nxLineY} stroke="currentColor" strokeWidth="1" />
           <line x1={xLeft} y1={nxLineY - 6} x2={xLeft} y2={nxLineY + 6} stroke="currentColor" strokeWidth="1" />
@@ -266,77 +396,685 @@ function EffortsGlobalReferenceFigure() {
   );
 }
 
-function TransversalSection2DFigure({ hx, hy }: { hx: number; hy: number }) {
+function TransversalSection2DFigure({
+  hx,
+  hy,
+  nx,
+  ny,
+  showSection = true,
+}: {
+  hx: number;
+  hy: number;
+  nx: number;
+  ny: number;
+  showSection?: boolean;
+}) {
+  const sectionLeft = 72;
+  const sectionTop = 56;
+  const sectionRight = 232;
+  const sectionBottom = 208;
+  const coverPx = 24;
+  const bars = buildPerimeterBars({
+    xLeft: sectionLeft + coverPx,
+    yTop: sectionTop + coverPx,
+    xRight: sectionRight - coverPx,
+    yBottom: sectionBottom - coverPx,
+    nx,
+    ny,
+  });
+
   return (
     <div className="rounded-md border border-border bg-muted/30 p-3">
-      <svg viewBox="0 0 340 280" className="mx-auto h-[280px] w-full max-w-[360px]" role="img" aria-label="Seção transversal 2D com cotas hx e hy">
+      <svg viewBox="0 0 340 280" className="mx-auto h-auto w-full max-w-[300px]" role="img" aria-label="Seção transversal 2D com cotas hx e hy">
+
         <line x1="64" y1="208" x2="276" y2="208" stroke="currentColor" strokeWidth="1.5" />
         <line x1="64" y1="208" x2="64" y2="30" stroke="currentColor" strokeWidth="1.5" />
 
-        <line x1="68" y1="204" x2="64" y2="208" stroke="currentColor" strokeWidth="1.5" />
-        <line x1="68" y1="212" x2="64" y2="208" stroke="currentColor" strokeWidth="1.5" />
+        {/* Arrow for x axis (only right end) */}
         <line x1="272" y1="204" x2="276" y2="208" stroke="currentColor" strokeWidth="1.5" />
         <line x1="272" y1="212" x2="276" y2="208" stroke="currentColor" strokeWidth="1.5" />
+
+        {/* Arrow for y axis (only top end) */}
         <line x1="60" y1="34" x2="64" y2="30" stroke="currentColor" strokeWidth="1.5" />
         <line x1="68" y1="34" x2="64" y2="30" stroke="currentColor" strokeWidth="1.5" />
 
         <text x="286" y="230" fontSize="12">x (cm)</text>
         <text x="68" y="24" fontSize="12">y (cm)</text>
 
-        <rect x="72" y="56" width="160" height="152" fill="none" stroke="currentColor" strokeWidth="2.2" />
+        {showSection && (
+          <>
+            <rect x={sectionLeft} y={sectionTop} width="160" height="152" fill="none" stroke="currentColor" strokeWidth="2.2" />
 
-        <circle cx="96" cy="80" r="2.8" fill="currentColor" />
-        <circle cx="208" cy="80" r="2.8" fill="currentColor" />
-        <circle cx="96" cy="184" r="2.8" fill="currentColor" />
-        <circle cx="208" cy="184" r="2.8" fill="currentColor" />
+            {bars.map((bar, index) => (
+              <circle key={`section-bar-${index}`} cx={bar.x} cy={bar.y} r="2.8" fill="currentColor" />
+            ))}
 
-        <line x1="48" y1="56" x2="48" y2="208" stroke="currentColor" strokeWidth="1" />
-        <line x1="42" y1="56" x2="54" y2="56" stroke="currentColor" strokeWidth="1" />
-        <line x1="42" y1="208" x2="54" y2="208" stroke="currentColor" strokeWidth="1" />
-        <text x="24" y="136" fontSize="16">{hy}</text>
+            <line x1="48" y1="56" x2="48" y2="208" stroke="currentColor" strokeWidth="1" />
+            <line x1="42" y1="56" x2="54" y2="56" stroke="currentColor" strokeWidth="1" />
+            <line x1="42" y1="208" x2="54" y2="208" stroke="currentColor" strokeWidth="1" />
+            <text x="24" y="136" fontSize="16">{hy}</text>
 
-        <line x1="72" y1="224" x2="232" y2="224" stroke="currentColor" strokeWidth="1" />
-        <line x1="72" y1="218" x2="72" y2="230" stroke="currentColor" strokeWidth="1" />
-        <line x1="232" y1="218" x2="232" y2="230" stroke="currentColor" strokeWidth="1" />
-        <text x="146" y="244" fontSize="16">{hx}</text>
+            <line x1="72" y1="224" x2="232" y2="224" stroke="currentColor" strokeWidth="1" />
+            <line x1="72" y1="218" x2="72" y2="230" stroke="currentColor" strokeWidth="1" />
+            <line x1="232" y1="218" x2="232" y2="230" stroke="currentColor" strokeWidth="1" />
+            <text x="146" y="244" fontSize="16">{hx}</text>
 
-        <g className="text-destructive">
-          <line x1="154" y1="144" x2="186" y2="144" stroke="currentColor" strokeWidth="2" />
-          <polygon points="186,144 178,140 178,148" fill="currentColor" />
-          <text x="162" y="138" fontSize="12" fill="currentColor">Mx</text>
+            <g className="text-destructive">
+              <line x1="154" y1="144" x2="186" y2="144" stroke="currentColor" strokeWidth="2" />
+              <polygon points="178,144 170,140 170,148" fill="currentColor" />
+              <polygon points="186,144 178,140 178,148" fill="currentColor" />
+              <text x="162" y="138" fontSize="12" fill="currentColor">Mx</text>
 
-          <line x1="154" y1="144" x2="154" y2="112" stroke="currentColor" strokeWidth="2" />
-          <polygon points="154,112 150,120 158,120" fill="currentColor" />
-          <text x="160" y="114" fontSize="12" fill="currentColor">My</text>
-        </g>
+              <line x1="154" y1="144" x2="154" y2="112" stroke="currentColor" strokeWidth="2" />
+              <polygon points="154,120 150,128 158,128" fill="currentColor" />
+              <polygon points="154,112 150,120 158,120" fill="currentColor" />
+              <text x="160" y="114" fontSize="12" fill="currentColor">My</text>
+            </g>
+          </>
+        )}
       </svg>
     </div>
   );
 }
 
+function EffortNormalDiagram({ value }: { value: number }) {
+  return (
+    <div className="rounded-md border border-input bg-background p-2">
+      <p className="text-center text-xs font-semibold text-foreground">Nsd (kN)</p>
+      <svg viewBox="0 0 120 140" className="mx-auto h-[140px] w-full max-w-[120px]" role="img" aria-label="Diagrama de esforço normal">
+        <line x1="10" y1="20" x2="110" y2="20" stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
+        <line x1="10" y1="120" x2="110" y2="120" stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
+
+        <line x1="35" y1="20" x2="35" y2="120" stroke="currentColor" strokeWidth="1.4" />
+
+        <rect x="35" y="20" width="28" height="100" fill="#f8c7c7" stroke="#b91c1c" strokeWidth="1.5" />
+
+        <text x="49" y="14" textAnchor="middle" fontSize="11" fill="#111827">{formatEffortNumber(value)}</text>
+        <text x="92" y="24" fontSize="10" fill="#6b7280">Topo</text>
+        <text x="92" y="124" fontSize="10" fill="#6b7280">Base</text>
+      </svg>
+    </div>
+  );
+}
+
+function EffortMomentDiagram({
+  title,
+  unit,
+  topValue,
+  intermedValue,
+  baseValue,
+}: {
+  title: string;
+  unit: string;
+  topValue: number;
+  intermedValue: number;
+  baseValue: number;
+}) {
+  const yTop = 20;
+  const yIntermed = 70;
+  const yBase = 120;
+  const axisX = 35;
+  const maxWidth = 36;
+  const maxAbs = Math.max(Math.abs(topValue), Math.abs(intermedValue), Math.abs(baseValue), 1);
+  const mapX = (value: number) => axisX + (value / maxAbs) * maxWidth;
+
+  const xTop = mapX(topValue);
+  const xIntermed = mapX(intermedValue);
+  const xBase = mapX(baseValue);
+  const topLabelX = xTop + 4;
+  const intermedLabelX = xIntermed + 4;
+  const baseLabelX = xBase + 4;
+
+  return (
+    <div className="rounded-md border border-input bg-background p-2">
+      <p className="text-center text-xs font-semibold text-foreground">{title} ({unit})</p>
+      <svg viewBox="0 0 120 140" className="mx-auto h-[140px] w-full max-w-[120px]" role="img" aria-label={`Diagrama de ${title}`}>
+        <line x1="10" y1="20" x2="110" y2="20" stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
+        <line x1="10" y1="120" x2="110" y2="120" stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
+
+        <line x1={axisX} y1={yTop} x2={axisX} y2={yBase} stroke="currentColor" strokeWidth="1.4" />
+
+        <path
+          d={`M ${axisX} ${yTop} L ${xTop} ${yTop} L ${xIntermed} ${yIntermed} L ${xBase} ${yBase} L ${axisX} ${yBase} Z`}
+          fill="#f8c7c7"
+          stroke="#b91c1c"
+          strokeWidth="1.5"
+        />
+
+        <circle cx={xTop} cy={yTop} r="1.6" fill="#b91c1c" />
+        <circle cx={xIntermed} cy={yIntermed} r="1.6" fill="#b91c1c" />
+        <circle cx={xBase} cy={yBase} r="1.6" fill="#b91c1c" />
+
+        <text x={topLabelX} y={yTop - 3} fontSize="10" fill="#111827">{formatEffortNumber(topValue)}</text>
+        <text x={intermedLabelX} y={yIntermed - 2} fontSize="10" fill="#111827">{formatEffortNumber(intermedValue)}</text>
+        <text x={baseLabelX} y={yBase + 11} fontSize="10" fill="#111827">{formatEffortNumber(baseValue)}</text>
+      </svg>
+    </div>
+  );
+}
+
+function CloseDockOnSidebarCollapse({ onCollapse }: { onCollapse: () => void }) {
+  const { state } = useSidebar();
+
+  useEffect(() => {
+    if (state === 'collapsed') {
+      onCollapse();
+    }
+  }, [state, onCollapse]);
+
+  return null;
+}
+
+function InputDockPanel({
+  open,
+  onClose,
+  inputSection,
+  setInputSection,
+  confirmedSections,
+  runCalculation,
+  loading,
+  canCalculate,
+  confirmCurrentSection,
+  onGeometryChange,
+  momentUnit,
+  form,
+  updateNumber,
+  setForm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  inputSection: InputSection;
+  setInputSection: (value: InputSection) => void;
+  confirmedSections: Record<InputSection, boolean>;
+  runCalculation: () => void;
+  loading: boolean;
+  canCalculate: boolean;
+  confirmCurrentSection: () => void;
+  onGeometryChange: (value: 'biapoiado' | 'balanco') => void;
+  momentUnit: MomentUnit;
+  form: typeof DEFAULT_FORM;
+  updateNumber: (field: keyof typeof DEFAULT_FORM, value: number) => void;
+  setForm: React.Dispatch<React.SetStateAction<typeof DEFAULT_FORM>>;
+}) {
+  const { state } = useSidebar();
+  const sectionTitleClass = TYPOGRAPHY.sectionTitle;
+  const labelClass = TYPOGRAPHY.label;
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <aside
+      className={`fixed top-0 z-50 h-svh w-[18rem] border border-border/60 bg-gradient-to-b from-card via-card to-card/95 shadow-2xl backdrop-blur-sm transition-all ${
+        state === 'expanded' ? 'left-[18rem]' : 'left-[3rem]'
+      }`}
+      aria-label="Dados de entrada"
+    >
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className={`border-b border-border/70 bg-card/90 p-6 backdrop-blur ${SIDEBAR_HEADER_SIZE_CLASS}`}>
+          <div className="flex items-start justify-between gap-2">
+            <p className={`flex-1 ${TYPOGRAPHY.panelHelper}`}>Preencha e confirme as seções para calcular.</p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 min-h-8 min-w-8 shrink-0 rounded-xl border border-border/70 bg-background/90 text-foreground shadow-sm backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent/80 hover:shadow"
+                onClick={onClose}
+                aria-label="Fechar dados de entrada"
+              >
+                {state === 'expanded' ? <ChevronLeft /> : <ChevronRight />}
+              </Button>
+          </div>
+          <div className="mt-2 flex items-center gap-1.5">
+            {(Object.keys(INPUT_SECTION_LABELS) as InputSection[]).map((sectionKey) => {
+              const icon = {
+                geometria: 'G',
+                materiais: 'M',
+                armadura: 'A',
+                esforcos: 'E',
+              }[sectionKey];
+              const isActive = inputSection === sectionKey;
+              const isConfirmed = confirmedSections[sectionKey];
+              return (
+                <button
+                  key={sectionKey}
+                  type="button"
+                  className={`h-5 w-5 rounded-full border ${TYPOGRAPHY.marker} font-bold leading-none transition-all ${
+                    isActive ? 'border-primary bg-primary text-white' : 'border-border bg-muted text-foreground'
+                  } ${isConfirmed ? 'ring-2 ring-green-500 border-green-500' : ''}`}
+                  onClick={() => setInputSection(sectionKey)}
+                >
+                  {icon}
+                </button>
+              );
+            })}
+            <Button
+              type="button"
+              onClick={runCalculation}
+              disabled={loading || !canCalculate}
+              className={`ml-2 h-7 px-3 ${TYPOGRAPHY.compactControl}`}
+            >
+              {loading ? 'Calculando...' : 'Calcular'}
+            </Button>
+          </div>
+        </div>
+
+        <div className={`flex-1 space-y-6 overflow-y-auto p-4 ${TYPOGRAPHY.control}`}>
+          <section className="space-y-3 rounded-xl border border-border/70 bg-background/60 p-4 shadow-sm backdrop-blur-sm">
+            <h3 className={sectionTitleClass}>Seções de entrada</h3>
+            <Select value={inputSection} onValueChange={(value: InputSection) => setInputSection(value)}>
+              <SelectTrigger className={TYPOGRAPHY.control}>
+                <SelectValue placeholder="Selecione a secao" className={TYPOGRAPHY.control} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="geometria" className={TYPOGRAPHY.control}>Geometria</SelectItem>
+                <SelectItem value="materiais" className={TYPOGRAPHY.control}>Materiais</SelectItem>
+                <SelectItem value="armadura" className={TYPOGRAPHY.control}>Armadura</SelectItem>
+                <SelectItem value="esforcos" className={TYPOGRAPHY.control}>Esforços</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="button" onClick={confirmCurrentSection} className={`w-full rounded-xl ${TYPOGRAPHY.control}`}>
+              Confirmar {INPUT_SECTION_LABELS[inputSection]}
+            </Button>
+          </section>
+
+          {inputSection === 'geometria' && (
+            <section className="space-y-3 rounded-xl border border-border/70 bg-background/60 p-4 shadow-sm backdrop-blur-sm">
+              <h3 className={sectionTitleClass}>Geometria</h3>
+              <GeometryReferenceFigure hx={form.hx} hy={form.hy} length={form.L} geometry={form.geometry} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="hx" className={labelClass}>h<sub>x</sub> (cm)</Label>
+                  <Input id="hx" type="number" min={0} value={form.hx} onChange={(e) => updateNumber('hx', e.target.valueAsNumber)} step="any" className={`${TYPOGRAPHY.control} py-1`} />
+                </div>
+                <div>
+                  <Label htmlFor="hy" className={labelClass}>h<sub>y</sub> (cm)</Label>
+                  <Input id="hy" type="number" min={0} value={form.hy} onChange={(e) => updateNumber('hy', e.target.valueAsNumber)} step="any" className={`${TYPOGRAPHY.control} py-1`} />
+                </div>
+                <div>
+                  <Label htmlFor="l" className={labelClass}>L (cm)</Label>
+                  <Input id="l" type="number" min={0} value={form.L} onChange={(e) => updateNumber('L', e.target.valueAsNumber)} step="any" className={`${TYPOGRAPHY.control} py-1`} />
+                </div>
+                <div>
+                  <Label className={labelClass}>Vinculação</Label>
+                  <Select value={form.geometry} onValueChange={(value: 'biapoiado' | 'balanco') => onGeometryChange(value)}>
+                    <SelectTrigger className={`${TYPOGRAPHY.control} py-1`}>
+                      <SelectValue placeholder="Selecione" className={TYPOGRAPHY.control} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="biapoiado" className={TYPOGRAPHY.control}>Biapoiado</SelectItem>
+                      <SelectItem value="balanco" className={TYPOGRAPHY.control}>Engastado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {inputSection === 'materiais' && (
+            <section className="space-y-2 rounded-xl border border-border/70 bg-background/60 p-3 shadow-sm backdrop-blur-sm">
+              <h3 className={sectionTitleClass}>Materiais</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className={labelClass}>Concreto</Label>
+                  <Select value={`C${form.fck}`} onValueChange={(value) => updateNumber('fck', Number(value.replace('C', '')))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CONCRETE_CLASSES.map((strength) => (
+                        <SelectItem key={strength} value={`C${strength}`}>{`C${strength}`}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className={labelClass}>Aço</Label>
+                  <Select value={form.steel} onValueChange={(value: 'CA-50' | 'CA-60') => setForm((prev) => ({ ...prev, steel: value }))}>
+                    <SelectTrigger className={`${TYPOGRAPHY.compactControl} py-1`}>
+                      <SelectValue placeholder="Selecione" className={TYPOGRAPHY.compactControl} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CA-50" className={TYPOGRAPHY.compactControl}>CA-50</SelectItem>
+                      <SelectItem value="CA-60" className={TYPOGRAPHY.compactControl}>CA-60</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="yc" className={labelClass}>γ<sub>c</sub> (concreto)</Label>
+                  <Input id="yc" type="number" min={0} value={form.yc} onChange={(e) => updateNumber('yc', e.target.valueAsNumber)} step="any" className={`${TYPOGRAPHY.compactControl} py-1`} />
+                </div>
+                <div>
+                  <Label htmlFor="gammas" className={labelClass}>γ<sub>s</sub> (aço)</Label>
+                  <Input id="gammas" type="number" min={0} value={form.gammas} onChange={(e) => updateNumber('gammas', e.target.valueAsNumber)} step="any" className={`${TYPOGRAPHY.compactControl} py-1`} />
+                </div>
+              </div>
+            </section>
+          )}
+
+          {inputSection === 'armadura' && (
+            <section className="space-y-2 rounded-xl border border-border/70 bg-background/60 p-3 shadow-sm backdrop-blur-sm">
+              <h3 className={sectionTitleClass}>Armadura</h3>
+              <ArmaduraReferenceFigure nx={form.nx} ny={form.ny} dlinha={form.dlinha} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="diameter" className={labelClass}>Diâmetro (mm)</Label>
+                  <Select
+                    value={String(form.diameter)}
+                    onValueChange={(value) => updateNumber('diameter', Number(value))}
+                  >
+                    <SelectTrigger id="diameter" className={`${TYPOGRAPHY.compactControl} py-1`}>
+                      <SelectValue placeholder="Selecione o diâmetro" className={TYPOGRAPHY.compactControl} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="8" className={TYPOGRAPHY.compactControl}>8</SelectItem>
+                      <SelectItem value="10" className={TYPOGRAPHY.compactControl}>10</SelectItem>
+                      <SelectItem value="12.5" className={TYPOGRAPHY.compactControl}>12.5</SelectItem>
+                      <SelectItem value="16" className={TYPOGRAPHY.compactControl}>16</SelectItem>
+                      <SelectItem value="20" className={TYPOGRAPHY.compactControl}>20</SelectItem>
+                      <SelectItem value="25" className={TYPOGRAPHY.compactControl}>25</SelectItem>
+                      <SelectItem value="32" className={TYPOGRAPHY.compactControl}>32</SelectItem>
+                      <SelectItem value="40" className={TYPOGRAPHY.compactControl}>40</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="dlinha" className={labelClass}>d' (cm)</Label>
+                  <Input id="dlinha" type="number" min={0} value={form.dlinha} onChange={(e) => updateNumber('dlinha', e.target.valueAsNumber)} step="any" className={`${TYPOGRAPHY.compactControl} py-1`} />
+                </div>
+                <div>
+                  <Label htmlFor="nx" className={labelClass}>n<sub>x</sub></Label>
+                  <Input id="nx" type="number" min={0} value={form.nx} onChange={(e) => updateNumber('nx', e.target.valueAsNumber)} step="1" />
+                </div>
+                <div>
+                  <Label htmlFor="ny" className={labelClass}>n<sub>y</sub></Label>
+                  <Input id="ny" type="number" min={0} value={form.ny} onChange={(e) => updateNumber('ny', e.target.valueAsNumber)} step="1" />
+                </div>
+              </div>
+            </section>
+          )}
+
+          {inputSection === 'esforcos' && (
+            <section className="space-y-3 rounded-xl border border-border/70 bg-background/60 p-4 shadow-sm backdrop-blur-sm">
+              <h3 className={sectionTitleClass}>Esforços</h3>
+              <EffortsGlobalReferenceFigure />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="gammaf" className={labelClass}>γ<sub>f</sub></Label>
+                  <Input id="gammaf" type="number" value={form.gammaf} onChange={(e) => updateNumber('gammaf', e.target.valueAsNumber)} step="any" />
+                </div>
+                <div>
+                  <Label htmlFor="nsk" className={labelClass}>N<sub>sk</sub> (kN)</Label>
+                  <Input id="nsk" type="number" value={form.Nsk} onChange={(e) => updateNumber('Nsk', e.target.valueAsNumber)} step="any" />
+                </div>
+                <div>
+                  <Label htmlFor="msktopox" className={labelClass}>M<sub>sk</sub><sub> - Topo - x</sub> ({momentUnit})</Label>
+                  <Input id="msktopox" type="number" value={form.MskTopox} onChange={(e) => updateNumber('MskTopox', e.target.valueAsNumber)} step="any" />
+                </div>
+                <div>
+                  <Label htmlFor="mskbasex" className={labelClass}>M<sub>sk</sub><sub> - Base - x</sub> ({momentUnit})</Label>
+                  <Input id="mskbasex" type="number" value={form.MskBasex} onChange={(e) => updateNumber('MskBasex', e.target.valueAsNumber)} step="any" />
+                </div>
+                <div>
+                  <Label htmlFor="msktopoy" className={labelClass}>M<sub>sk</sub><sub> - Topo - y</sub> ({momentUnit})</Label>
+                  <Input id="msktopoy" type="number" value={form.MskTopoy} onChange={(e) => updateNumber('MskTopoy', e.target.valueAsNumber)} step="any" />
+                </div>
+                <div>
+                  <Label htmlFor="mskbasey" className={labelClass}>M<sub>sk</sub><sub> - Base - y</sub> ({momentUnit})</Label>
+                  <Input id="mskbasey" type="number" value={form.MskBasey} onChange={(e) => updateNumber('MskBasey', e.target.valueAsNumber)} step="any" />
+                </div>
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function MethodDockPanel({
+  open,
+  onClose,
+  method,
+  setMethod,
+}: {
+  open: boolean;
+  onClose: () => void;
+  method: Method;
+  setMethod: (value: Method) => void;
+}) {
+  const { state } = useSidebar();
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <aside
+      className={`fixed top-0 z-50 h-svh w-[18rem] border border-border/60 bg-gradient-to-b from-card via-card to-card/95 shadow-2xl backdrop-blur-sm transition-all ${
+        state === 'expanded' ? 'left-[18rem]' : 'left-[3rem]'
+      }`}
+      aria-label="Método de cálculo"
+    >
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className={`border-b border-border/70 bg-card/90 p-6 pt-8 pb-8 backdrop-blur ${SIDEBAR_HEADER_SIZE_CLASS}`}>
+          <div className="flex items-start justify-between gap-2">
+            <p className={`flex-1 ${TYPOGRAPHY.panelHelper}`}>Selecione o método para análise de 2ª ordem.</p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-xl border border-border/70 bg-background/90 text-foreground shadow-sm backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent/80 hover:shadow"
+              onClick={onClose}
+              aria-label="Fechar método de cálculo"
+            >
+              {state === 'expanded' ? <ChevronLeft /> : <ChevronRight />}
+            </Button>
+          </div>
+        </div>
+
+        <div className="p-4">
+          <section className="space-y-3 rounded-xl border border-border/70 bg-background/60 p-4 shadow-sm backdrop-blur-sm">
+            <h3 className={TYPOGRAPHY.sectionTitle}>Método de cálculo para 2ª Ordem</h3>
+            <Select value={method} onValueChange={(value: Method) => setMethod(value as Method)}>
+              <SelectTrigger className={`w-full ${TYPOGRAPHY.control}`}>
+                <SelectValue placeholder="Selecione o método" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="curvatura-aproximada">Curvatura Aproximada</SelectItem>
+                <SelectItem value="rigidez-k-aproximada">Rigidez K Aproximada</SelectItem>
+              </SelectContent>
+            </Select>
+          </section>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function UnitsDockPanel({
+  open,
+  onClose,
+  momentUnit,
+  onMomentUnitChange,
+}: {
+  open: boolean;
+  onClose: () => void;
+  momentUnit: MomentUnit;
+  onMomentUnitChange: (value: MomentUnit) => void;
+}) {
+  const { state } = useSidebar();
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <aside
+      className={`fixed top-0 z-50 h-svh w-[18rem] border border-border/60 bg-gradient-to-b from-card via-card to-card/95 shadow-2xl backdrop-blur-sm transition-all ${
+        state === 'expanded' ? 'left-[18rem]' : 'left-[3rem]'
+      }`}
+      aria-label="Sistema de unidades"
+    >
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className={`border-b border-border/70 bg-card/90 p-6 pt-8 pb-8 backdrop-blur ${SIDEBAR_HEADER_SIZE_CLASS}`}>
+          <div className="flex items-start justify-between gap-2">
+            <p className={`flex-1 ${TYPOGRAPHY.panelHelper}`}>
+              Defina a unidade de momento para entrada e visualização.
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-xl border border-border/70 bg-background/90 text-foreground shadow-sm backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent/80 hover:shadow"
+              onClick={onClose}
+              aria-label="Fechar sistema de unidades"
+            >
+              {state === 'expanded' ? <ChevronLeft /> : <ChevronRight />}
+            </Button>
+          </div>
+        </div>
+
+        <div className="p-4">
+          <section className="space-y-3 rounded-xl border border-border/70 bg-background/60 p-4 shadow-sm backdrop-blur-sm">
+            <h3 className={TYPOGRAPHY.sectionTitle}>Momento</h3>
+            <Select value={momentUnit} onValueChange={(value: MomentUnit) => onMomentUnitChange(value)}>
+              <SelectTrigger className={`w-full ${TYPOGRAPHY.control}`}>
+                <SelectValue placeholder="Selecione a unidade" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="kN*m">kN*m</SelectItem>
+                <SelectItem value="kN*cm">kN*cm</SelectItem>
+              </SelectContent>
+            </Select>
+          </section>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function MemorialDockPanel({
+  open,
+  onClose,
+  sections,
+  onToggleSection,
+  onGeneratePdf,
+  isGenerating,
+}: {
+  open: boolean;
+  onClose: () => void;
+  sections: Record<MemorialSection, boolean>;
+  onToggleSection: (section: MemorialSection) => void;
+  onGeneratePdf: () => void;
+  isGenerating: boolean;
+}) {
+  const { state } = useSidebar();
+  const canGenerate = sections.apiCall || sections.apiOutput;
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <aside
+      className={`fixed top-0 z-50 h-svh w-[18rem] border border-border/60 bg-gradient-to-b from-card via-card to-card/95 shadow-2xl backdrop-blur-sm transition-all ${
+        state === 'expanded' ? 'left-[18rem]' : 'left-[3rem]'
+      }`}
+      aria-label="Memória de cálculo"
+    >
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className={`border-b border-border/70 bg-card/90 p-6 pt-8 pb-8 backdrop-blur ${SIDEBAR_HEADER_SIZE_CLASS}`}>
+          <div className="flex items-start justify-between gap-2">
+            <p className={`flex-1 ${TYPOGRAPHY.panelHelper}`}>
+              Selecione quais blocos devem entrar no memorial em PDF.
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-xl border border-border/70 bg-background/90 text-foreground shadow-sm backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent/80 hover:shadow"
+              onClick={onClose}
+              aria-label="Fechar configurações de memorial"
+            >
+              {state === 'expanded' ? <ChevronLeft /> : <ChevronRight />}
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <section className="space-y-3 rounded-xl border border-border/70 bg-background/60 p-4 shadow-sm backdrop-blur-sm">
+            <h3 className={TYPOGRAPHY.sectionTitle}>Seções do memorial</h3>
+
+            <div className="space-y-2">
+              {(Object.keys(MEMORIAL_SECTION_LABELS) as MemorialSection[]).map((sectionKey) => {
+                const isActive = sections[sectionKey];
+                return (
+                  <Button
+                    key={sectionKey}
+                    type="button"
+                    variant={isActive ? 'default' : 'outline'}
+                    className="w-full justify-between"
+                    onClick={() => onToggleSection(sectionKey)}
+                  >
+                    <span>{MEMORIAL_SECTION_LABELS[sectionKey]}</span>
+                    <span className="text-xs font-medium">{isActive ? 'ON' : 'OFF'}</span>
+                  </Button>
+                );
+              })}
+            </div>
+
+            <Button
+              type="button"
+              onClick={onGeneratePdf}
+              disabled={isGenerating || !canGenerate}
+              className="w-full"
+            >
+              {isGenerating ? 'Gerando PDF...' : 'Gerar PDF'}
+            </Button>
+          </section>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 export default function PilarSegundaOrdemLocalPage() {
+  const [secondaryDock, setSecondaryDock] = useState<SecondaryDock>('none');
+
   const menuItems: MenuItem[] = [
     {
       label: 'Dados de Entrada',
       icon: Package2,
-      onClick: () => setInputSheetOpen(true),
+      onClick: () => setSecondaryDock('entradas'),
+      isActive: secondaryDock === 'entradas',
     },
     {
       label: 'Opções',
       icon: Settings,
+      isActive: secondaryDock === 'metodo',
       items: [
-        { label: 'Método de Cálculo', onClick: () => setMethodModalOpen(true), icon: FileText },
+        {
+          label: 'Método de Cálculo',
+          onClick: () => setSecondaryDock('metodo'),
+          icon: FileText,
+          isActive: secondaryDock === 'metodo',
+        },
       ],
     },
   ];
 
   const configItems: MenuItem[] = [
-    { label: 'Configurações', href: '/settings', icon: Settings },
+    {
+      label: 'Sistema de Unidades',
+      icon: Settings,
+      onClick: () => setSecondaryDock('units'),
+      isActive: secondaryDock === 'units',
+    },
   ];
 
   const [method, setMethod] = useState<Method>('curvatura-aproximada');
-  const [inputSheetOpen, setInputSheetOpen] = useState(false);
-  const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
   const [inputSection, setInputSection] = useState<InputSection>('geometria');
   const [confirmedSections, setConfirmedSections] = useState<Record<InputSection, boolean>>({
     geometria: false,
@@ -344,11 +1082,31 @@ export default function PilarSegundaOrdemLocalPage() {
     armadura: false,
     esforcos: false,
   });
-  const [methodModalOpen, setMethodModalOpen] = useState(false);
   const [form, setForm] = useState(DEFAULT_FORM);
+  const [momentUnit, setMomentUnit] = useState<MomentUnit>('kN*m');
   const [loading, setLoading] = useState(false);
+  const [isGeneratingMemorial, setIsGeneratingMemorial] = useState(false);
+  const [memorialSections, setMemorialSections] = useState<Record<MemorialSection, boolean>>({
+    apiCall: true,
+    apiOutput: true,
+  });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [responseData, setResponseData] = useState<unknown | null>(null);
+
+  const resetArmaduraAfterGeometryChange = useCallback(() => {
+    setForm((prev) => ({
+      ...prev,
+      diameter: DEFAULT_FORM.diameter,
+      nx: DEFAULT_FORM.nx,
+      ny: DEFAULT_FORM.ny,
+      dlinha: DEFAULT_FORM.dlinha,
+    }));
+
+    setConfirmedSections((prev) => ({
+      ...prev,
+      armadura: false,
+    }));
+  }, []);
 
   const payload = useMemo(
     () => ({
@@ -367,13 +1125,13 @@ export default function PilarSegundaOrdemLocalPage() {
       ny: form.ny,
       dlinha: { value: form.dlinha, unit: 'cm' },
       Nsk: { value: form.Nsk, unit: 'kN' },
-      MskTopox: { value: form.MskTopox, unit: 'kN*m' },
-      MskBasex: { value: form.MskBasex, unit: 'kN*m' },
-      MskTopoy: { value: form.MskTopoy, unit: 'kN*m' },
-      MskBasey: { value: form.MskBasey, unit: 'kN*m' },
+      MskTopox: { value: convertMomentUnitValue(form.MskTopox, momentUnit, BACKEND_MOMENT_UNIT), unit: BACKEND_MOMENT_UNIT },
+      MskBasex: { value: convertMomentUnitValue(form.MskBasex, momentUnit, BACKEND_MOMENT_UNIT), unit: BACKEND_MOMENT_UNIT },
+      MskTopoy: { value: convertMomentUnitValue(form.MskTopoy, momentUnit, BACKEND_MOMENT_UNIT), unit: BACKEND_MOMENT_UNIT },
+      MskBasey: { value: convertMomentUnitValue(form.MskBasey, momentUnit, BACKEND_MOMENT_UNIT), unit: BACKEND_MOMENT_UNIT },
       gammaf: { value: form.gammaf, unit: 'adimensional' },
     }),
-    [form],
+    [form, momentUnit],
   );
 
   const endpoint = useMemo(
@@ -381,17 +1139,155 @@ export default function PilarSegundaOrdemLocalPage() {
     [method],
   );
 
+  const effortInputRow = useMemo(
+    () => ({
+      combination: 1,
+      Nsk: -Math.abs(form.Nsk),
+      MskTopox: form.MskTopox,
+      MskBasex: form.MskBasex,
+      MskTopoy: form.MskTopoy,
+      MskBasey: form.MskBasey,
+    }),
+    [form.MskBasex, form.MskBasey, form.MskTopox, form.MskTopoy, form.Nsk],
+  );
+
+  const effortDesignRows = useMemo(() => {
+    const msdTopX = Math.abs(form.MskTopox * form.gammaf);
+    const msdTopY = Math.abs(form.MskTopoy * form.gammaf);
+    const msdBaseX = Math.abs(form.MskBasex * form.gammaf);
+    const msdBaseY = Math.abs(form.MskBasey * form.gammaf);
+
+    const intermedXRaw = extractFirstNumber(responseData, [
+      'results.x.MsdTotal.value',
+      'results.x.MsdTotal',
+      'x.MsdTotal.value',
+      'x.MsdTotal',
+      'MsdIntermedX',
+      'MsdIntermediarioX',
+    ]);
+    const intermedX = intermedXRaw === null
+      ? null
+      : convertMomentUnitValue(intermedXRaw, BACKEND_MOMENT_UNIT, momentUnit);
+
+    const intermedYRaw = extractFirstNumber(responseData, [
+      'results.y.MsdTotal.value',
+      'results.y.MsdTotal',
+      'y.MsdTotal.value',
+      'y.MsdTotal',
+      'MsdIntermedY',
+      'MsdIntermediarioY',
+    ]);
+    const intermedY = intermedYRaw === null
+      ? null
+      : convertMomentUnitValue(intermedYRaw, BACKEND_MOMENT_UNIT, momentUnit);
+
+    const fsTop = extractFirstNumber(responseData, [
+      'results.topo.fs',
+      'results.top.fs',
+      'fs.topo',
+      'FS.topo',
+    ]);
+
+    const fsIntermed = extractFirstNumber(responseData, [
+      'results.intermediario.fs',
+      'results.intermed.fs',
+      'fs.intermediario',
+      'FS.intermediario',
+      'fs.intermed',
+      'FS.intermed',
+    ]);
+
+    const fsBase = extractFirstNumber(responseData, [
+      'results.base.fs',
+      'fs.base',
+      'FS.base',
+    ]);
+
+    return [
+      { z: 'L (Topo)', msdX: msdTopX, msdY: msdTopY, fs: fsTop },
+      { z: 'Intermed.', msdX: intermedX, msdY: intermedY, fs: fsIntermed },
+      { z: '0 (Base)', msdX: msdBaseX, msdY: msdBaseY, fs: fsBase },
+    ];
+  }, [form.MskBasex, form.MskBasey, form.MskTopox, form.MskTopoy, form.gammaf, momentUnit, responseData]);
+
+  const diagramValues = useMemo(() => {
+    const normalDesign = -Math.abs(form.Nsk * form.gammaf);
+
+    const msdXTop = effortDesignRows[0]?.msdX ?? 0;
+    const msdXBase = effortDesignRows[2]?.msdX ?? 0;
+    const msdXIntermed = effortDesignRows[1]?.msdX ?? (msdXTop + msdXBase) / 2;
+
+    const msdYTop = effortDesignRows[0]?.msdY ?? 0;
+    const msdYBase = effortDesignRows[2]?.msdY ?? 0;
+    const msdYIntermed = effortDesignRows[1]?.msdY ?? (msdYTop + msdYBase) / 2;
+
+    return {
+      normalDesign,
+      msdXTop,
+      msdXIntermed,
+      msdXBase,
+      msdYTop,
+      msdYIntermed,
+      msdYBase,
+    };
+  }, [effortDesignRows, form.Nsk, form.gammaf]);
+
+  const onMomentUnitChange = (nextUnit: MomentUnit) => {
+    if (nextUnit === momentUnit) {
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      MskTopox: convertMomentUnitValue(prev.MskTopox, momentUnit, nextUnit),
+      MskBasex: convertMomentUnitValue(prev.MskBasex, momentUnit, nextUnit),
+      MskTopoy: convertMomentUnitValue(prev.MskTopoy, momentUnit, nextUnit),
+      MskBasey: convertMomentUnitValue(prev.MskBasey, momentUnit, nextUnit),
+    }));
+    setMomentUnit(nextUnit);
+  };
+
   const updateNumber = (field: keyof typeof DEFAULT_FORM, value: number) => {
     if (Number.isNaN(value)) {
       return;
     }
 
     const nextValue = NON_NEGATIVE_FIELDS.has(field) ? Math.max(0, value) : value;
+    const didGeometryChange = GEOMETRY_FIELDS.has(field) && form[field] !== nextValue;
+
+    if (didGeometryChange) {
+      setForm((prev) => ({
+        ...prev,
+        [field]: nextValue,
+        diameter: DEFAULT_FORM.diameter,
+        nx: DEFAULT_FORM.nx,
+        ny: DEFAULT_FORM.ny,
+        dlinha: DEFAULT_FORM.dlinha,
+      }));
+
+      setConfirmedSections((prev) => ({
+        ...prev,
+        armadura: false,
+      }));
+      return;
+    }
 
     setForm((prev) => ({
       ...prev,
       [field]: nextValue,
     }));
+  };
+
+  const onGeometryChange = (value: 'biapoiado' | 'balanco') => {
+    if (form.geometry === value) {
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      geometry: value,
+    }));
+    resetArmaduraAfterGeometryChange();
   };
 
   const runCalculation = async () => {
@@ -449,265 +1345,177 @@ export default function PilarSegundaOrdemLocalPage() {
     }));
   };
 
+  const toggleMemorialSection = (section: MemorialSection) => {
+    setMemorialSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  };
+
+  const handleExportMemorialPdf = useCallback(async () => {
+    if (isGeneratingMemorial) {
+      return;
+    }
+
+    setErrorMessage(null);
+
+    if (!responseData) {
+      setErrorMessage('Execute o cálculo antes de exportar a Memória de Cálculo em PDF.');
+      return;
+    }
+
+    if (!memorialSections.apiCall && !memorialSections.apiOutput) {
+      setErrorMessage('Selecione ao menos uma seção do memorial para gerar o PDF.');
+      return;
+    }
+
+    setIsGeneratingMemorial(true);
+
+    try {
+      const sectionSvgElement = document.querySelector<SVGSVGElement>(
+        'svg[aria-label="Seção transversal 2D com cotas hx e hy"]',
+      );
+
+      const figures: Array<Record<string, unknown>> = [];
+      const figureIds: string[] = [];
+
+      if (sectionSvgElement) {
+        const sectionFigureId = 'fig-section-transversal-01';
+        const serializedSvg = new XMLSerializer().serializeToString(sectionSvgElement);
+
+        figures.push({
+          id: sectionFigureId,
+          title: 'Seção transversal',
+          type: 'svg',
+          source: 'frontend-svg',
+          mimeType: 'image/svg+xml',
+          data: serializedSvg,
+          widthMm: 120,
+          caption: 'Figura - Seção transversal adotada no cálculo',
+          tags: ['section', 'column'],
+        });
+        figureIds.push(sectionFigureId);
+      }
+
+      const memorialPayload = {
+        moduleId: 'column',
+        solutionId: `column-local-second-order-${method}-${Date.now()}`,
+        projectName: 'Pilar - Segunda ordem local',
+        outputFormat: 'pdf',
+        methodologies: [
+          {
+            methodologyId: method,
+            title:
+              method === 'curvatura-aproximada'
+                ? 'Pilar por curvatura aproximada'
+                : 'Pilar por rigidez K aproximada',
+            ...(memorialSections.apiCall ? { input: payload } : {}),
+            ...(memorialSections.apiOutput ? { result: responseData } : {}),
+            ...(figureIds.length > 0 ? { figureIds } : {}),
+          },
+        ],
+        figures,
+      };
+
+      const response = await fetch(MEMORIAL_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/pdf',
+        },
+        body: JSON.stringify(memorialPayload),
+      });
+
+      if (!response.ok) {
+        const details = await response.text();
+        throw new Error(`Erro ao gerar memorial PDF (${response.status}): ${details}`);
+      }
+
+      const pdfBlob = await response.blob();
+      const downloadUrl = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `memorial-calculo-${method}.pdf`;
+      a.click();
+      URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Falha ao gerar memorial em PDF.');
+    } finally {
+      setIsGeneratingMemorial(false);
+    }
+  }, [isGeneratingMemorial, memorialSections, method, payload, responseData]);
+
+  const exportItems: MenuItem[] = [
+    {
+      label: 'Memória de Cálculo',
+      icon: FileText,
+      isActive: secondaryDock === 'memorial',
+      items: [
+        {
+          label: 'PDF',
+          onClick: () => setSecondaryDock('memorial'),
+          icon: Download,
+          isActive: secondaryDock === 'memorial',
+        },
+      ],
+    },
+  ];
+
   return (
     <SidebarProvider defaultOpen={false}>
+      <CloseDockOnSidebarCollapse onCollapse={() => setSecondaryDock('none')} />
       <SidebarToggleButton />
       <AppSidebar 
         menuItems={menuItems}
         configItems={configItems}
+        exportItems={exportItems}
         menuGroupLabel="Seção Principal"
         configGroupLabel="Configurações"
+        headerClassName={`pt-8 pb-8 ${SIDEBAR_HEADER_SIZE_CLASS}`}
+      />
+      <InputDockPanel
+        open={secondaryDock === 'entradas'}
+        onClose={() => setSecondaryDock('none')}
+        inputSection={inputSection}
+        setInputSection={setInputSection}
+        confirmedSections={confirmedSections}
+        runCalculation={runCalculation}
+        loading={loading}
+        canCalculate={Object.values(confirmedSections).every(Boolean)}
+        confirmCurrentSection={confirmCurrentSection}
+        onGeometryChange={onGeometryChange}
+        momentUnit={momentUnit}
+        form={form}
+        updateNumber={updateNumber}
+        setForm={setForm}
+      />
+      <MethodDockPanel
+        open={secondaryDock === 'metodo'}
+        onClose={() => setSecondaryDock('none')}
+        method={method}
+        setMethod={setMethod}
+      />
+      <UnitsDockPanel
+        open={secondaryDock === 'units'}
+        onClose={() => setSecondaryDock('none')}
+        momentUnit={momentUnit}
+        onMomentUnitChange={onMomentUnitChange}
+      />
+      <MemorialDockPanel
+        open={secondaryDock === 'memorial'}
+        onClose={() => setSecondaryDock('none')}
+        sections={memorialSections}
+        onToggleSection={toggleMemorialSection}
+        onGeneratePdf={handleExportMemorialPdf}
+        isGenerating={isGeneratingMemorial}
       />
       <main className="relative flex h-screen w-full flex-col gap-4 overflow-hidden p-4 md:gap-6 md:p-6 flex-1">
-        <Sheet open={optionsSheetOpen} onOpenChange={setOptionsSheetOpen}>
-        <SheetContent side="left" className="w-[320px] overflow-y-auto sm:w-[420px]">
-          <SheetHeader>
-            <SheetTitle>Opções</SheetTitle>
-          </SheetHeader>
-          <section className="mt-6 rounded-lg border border-border p-4">
-            <Button type="button" className="w-full mb-2" onClick={() => setMethodModalOpen(true)}>
-              Método de Cálculo
-            </Button>
-          </section>
-          {/* ...outros itens de opções... */}
-        </SheetContent>
-      </Sheet>
-
-      <Sheet open={methodModalOpen} onOpenChange={setMethodModalOpen}>
-        <SheetContent side="top" className="max-w-md mx-auto">
-          <SheetHeader>
-            <SheetTitle>Método de cálculo para 2ª Ordem</SheetTitle>
-          </SheetHeader>
-          <section className="mt-6 rounded-lg border border-border p-4">
-            <Select value={method} onValueChange={(value: Method) => setMethod(value as Method)}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecione o método" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="curvatura-aproximada">Curvatura Aproximada</SelectItem>
-                <SelectItem value="rigidez-k-aproximada">Rigidez K Aproximada</SelectItem>
-              </SelectContent>
-            </Select>
-          </section>
-        </SheetContent>
-      </Sheet>
-
-      <Sheet open={inputSheetOpen} onOpenChange={setInputSheetOpen}>
-        <SheetContent side="right" className="w-[380px] overflow-y-auto sm:w-[520px]">
-          <SheetHeader>
-            <SheetTitle className="text-xs">Entradas do pilar</SheetTitle>
-            <div className="mt-2 flex items-center gap-2">
-              {(Object.keys(INPUT_SECTION_LABELS) as InputSection[]).map((sectionKey) => {
-                const icon = {
-                  geometria: 'G',
-                  materiais: 'M',
-                  armadura: 'A',
-                  esforcos: 'E',
-                }[sectionKey];
-                const isActive = inputSection === sectionKey;
-                const isConfirmed = confirmedSections[sectionKey];
-                return (
-                  <button
-                    key={sectionKey}
-                    type="button"
-                    className={`w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-bold border transition-all
-                      ${isActive ? 'bg-primary text-white border-primary' : 'bg-muted text-foreground border-border'}
-                      ${isConfirmed ? 'ring-2 ring-green-500 border-green-500' : ''}`}
-                    onClick={() => setInputSection(sectionKey)}
-                  >
-                    {icon}
-                  </button>
-                );
-              })}
-              <Button
-                type="button"
-                onClick={runCalculation}
-                disabled={loading || !Object.values(confirmedSections).every(Boolean)}
-                className="ml-4 h-8 px-4 text-sm"
-              >
-                {loading ? 'Calculando...' : 'Calcular'}
-              </Button>
-            </div>
-          </SheetHeader>
-
-          <div className="mt-6 space-y-6 text-[11px]">
-            <section className="space-y-3 rounded-lg border border-border p-4">
-              <h3 className="text-sm font-semibold">Seções de entrada</h3>
-              <Select value={inputSection} onValueChange={(value: InputSection) => setInputSection(value)}>
-                <SelectTrigger className="text-[11px]">
-                  <SelectValue placeholder="Selecione a secao" className="text-[11px]" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="geometria" className="text-[11px]">Geometria</SelectItem>
-                  <SelectItem value="materiais" className="text-[11px]">Materiais</SelectItem>
-                  <SelectItem value="armadura" className="text-[11px]">Armadura</SelectItem>
-                  <SelectItem value="esforcos" className="text-[11px]">Esforços</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button type="button" onClick={confirmCurrentSection} className="w-full text-[11px]">
-                Confirmar {INPUT_SECTION_LABELS[inputSection]}
-              </Button>
-            </section>
-
-            {inputSection === 'geometria' && (
-              <section className="space-y-3 rounded-lg border border-border p-4">
-                <h3 className="text-sm font-semibold">Geometria</h3>
-                <GeometryReferenceFigure hx={form.hx} hy={form.hy} length={form.L} geometry={form.geometry} />
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label htmlFor="hx" className="text-[11px]">h<sub>x</sub> (cm)</Label>
-                    <Input id="hx" type="number" min={0} value={form.hx} onChange={(e) => updateNumber('hx', e.target.valueAsNumber)} step="any" className="text-[11px] py-1" />
-                  </div>
-                  <div>
-                    <Label htmlFor="hy" className="text-[11px]">h<sub>y</sub> (cm)</Label>
-                    <Input id="hy" type="number" min={0} value={form.hy} onChange={(e) => updateNumber('hy', e.target.valueAsNumber)} step="any" className="text-[11px] py-1" />
-                  </div>
-                  <div>
-                    <Label htmlFor="l" className="text-[11px]">L (cm)</Label>
-                    <Input id="l" type="number" min={0} value={form.L} onChange={(e) => updateNumber('L', e.target.valueAsNumber)} step="any" className="text-[11px] py-1" />
-                  </div>
-                  <div>
-                    <Label className="text-[11px]">Vinculação</Label>
-                    <Select value={form.geometry} onValueChange={(value: 'biapoiado' | 'balanco') => setForm((prev) => ({ ...prev, geometry: value }))}>
-                      <SelectTrigger className="text-[11px] py-1">
-                        <SelectValue placeholder="Selecione" className="text-[11px]" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="biapoiado" className="text-[11px]">Biapoiado</SelectItem>
-                        <SelectItem value="balanco" className="text-[11px]">Engastado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {inputSection === 'materiais' && (
-              <section className="space-y-2 rounded-lg border border-border p-2">
-                <h3 className="text-xs font-semibold">Materiais</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Concreto</Label>
-                    <Select value={`C${form.fck}`} onValueChange={(value) => updateNumber('fck', Number(value.replace('C', '')))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {CONCRETE_CLASSES.map((strength) => (
-                          <SelectItem key={strength} value={`C${strength}`}>{`C${strength}`}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs">Aço</Label>
-                    <Select value={form.steel} onValueChange={(value: 'CA-50' | 'CA-60') => setForm((prev) => ({ ...prev, steel: value }))}>
-                      <SelectTrigger className="text-xs py-1">
-                        <SelectValue placeholder="Selecione" className="text-xs" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="CA-50" className="text-xs">CA-50</SelectItem>
-                        <SelectItem value="CA-60" className="text-xs">CA-60</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="yc" className="text-xs">γ<sub>c</sub> (concreto)</Label>
-                    <Input id="yc" type="number" min={0} value={form.yc} onChange={(e) => updateNumber('yc', e.target.valueAsNumber)} step="any" className="text-xs py-1" />
-                  </div>
-                  <div>
-                    <Label htmlFor="gammas" className="text-xs">γ<sub>s</sub> (aço)</Label>
-                    <Input id="gammas" type="number" min={0} value={form.gammas} onChange={(e) => updateNumber('gammas', e.target.valueAsNumber)} step="any" className="text-xs py-1" />
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {inputSection === 'armadura' && (
-              <section className="space-y-2 rounded-lg border border-border p-2">
-                <h3 className="text-xs font-semibold">Armadura</h3>
-                <ArmaduraReferenceFigure nx={form.nx} ny={form.ny} dlinha={form.dlinha} />
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label htmlFor="diameter" className="text-xs">Diâmetro (mm)</Label>
-                    <Select
-                      value={String(form.diameter)}
-                      onValueChange={(value) => updateNumber('diameter', Number(value))}
-                    >
-                      <SelectTrigger id="diameter" className="text-xs py-1">
-                        <SelectValue placeholder="Selecione o diâmetro" className="text-xs" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="8" className="text-xs">8</SelectItem>
-                        <SelectItem value="10" className="text-xs">10</SelectItem>
-                        <SelectItem value="12.5" className="text-xs">12.5</SelectItem>
-                        <SelectItem value="16" className="text-xs">16</SelectItem>
-                        <SelectItem value="20" className="text-xs">20</SelectItem>
-                        <SelectItem value="25" className="text-xs">25</SelectItem>
-                        <SelectItem value="32" className="text-xs">32</SelectItem>
-                        <SelectItem value="40" className="text-xs">40</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="dlinha" className="text-xs">d' (cm)</Label>
-                    <Input id="dlinha" type="number" min={0} value={form.dlinha} onChange={(e) => updateNumber('dlinha', e.target.valueAsNumber)} step="any" className="text-xs py-1" />
-                  </div>
-                  <div>
-                    <Label htmlFor="nx">n<sub>x</sub></Label>
-                    <Input id="nx" type="number" min={0} value={form.nx} onChange={(e) => updateNumber('nx', e.target.valueAsNumber)} step="1" />
-                  </div>
-                  <div>
-                    <Label htmlFor="ny">n<sub>y</sub></Label>
-                    <Input id="ny" type="number" min={0} value={form.ny} onChange={(e) => updateNumber('ny', e.target.valueAsNumber)} step="1" />
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {inputSection === 'esforcos' && (
-              <section className="space-y-3 rounded-lg border border-border p-4">
-                <h3 className="text-sm font-semibold">Esforços</h3>
-                <EffortsGlobalReferenceFigure />
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label htmlFor="gammaf">γ<sub>f</sub></Label>
-                    <Input id="gammaf" type="number" value={form.gammaf} onChange={(e) => updateNumber('gammaf', e.target.valueAsNumber)} step="any" />
-                  </div>
-                  <div>
-                    <Label htmlFor="nsk">N<sub>sk</sub> (kN)</Label>
-                    <Input id="nsk" type="number" value={form.Nsk} onChange={(e) => updateNumber('Nsk', e.target.valueAsNumber)} step="any" />
-                  </div>
-                  <div>
-                    <Label htmlFor="msktopox">M<sub>sk</sub><sub> - Topo - x</sub> (kN*m)</Label>
-                    <Input id="msktopox" type="number" value={form.MskTopox} onChange={(e) => updateNumber('MskTopox', e.target.valueAsNumber)} step="any" />
-                  </div>
-                  <div>
-                    <Label htmlFor="mskbasex">M<sub>sk</sub><sub> - Base - x</sub> (kN*m)</Label>
-                    <Input id="mskbasex" type="number" value={form.MskBasex} onChange={(e) => updateNumber('MskBasex', e.target.valueAsNumber)} step="any" />
-                  </div>
-                  <div>
-                    <Label htmlFor="msktopoy">M<sub>sk</sub><sub> - Topo - y</sub> (kN*m)</Label>
-                    <Input id="msktopoy" type="number" value={form.MskTopoy} onChange={(e) => updateNumber('MskTopoy', e.target.valueAsNumber)} step="any" />
-                  </div>
-                  <div>
-                    <Label htmlFor="mskbasey">M<sub>sk</sub><sub> - Base - y</sub> (kN*m)</Label>
-                    <Input id="mskbasey" type="number" value={form.MskBasey} onChange={(e) => updateNumber('MskBasey', e.target.valueAsNumber)} step="any" />
-                  </div>
-                </div>
-              </section>
-            )}
-
-          </div>
-        </SheetContent>
-      </Sheet>
-
       <div className="shrink-0 rounded-xl border border-border bg-card p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold text-foreground">Pilar - Segunda ordem local</h1>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Clique no menu lateral para abrir os dados de entrada e ajustar os parametros do calculo.
+            <h1 className={TYPOGRAPHY.pageTitle}>Pilar - Segunda ordem local</h1>
+            <p className={`mt-2 ${TYPOGRAPHY.helper}`}>
+              Clique no menu lateral para abrir os dados de entrada e ajustar os parâmetros do calculo.
             </p>
           </div>
         </div>
@@ -716,63 +1524,124 @@ export default function PilarSegundaOrdemLocalPage() {
       <div className="grid min-h-0 w-full flex-1 grid-cols-1 gap-6 overflow-hidden xl:grid-cols-3">
         <div className="flex min-h-0 min-w-0 flex-col gap-6 overflow-hidden">
           <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-6 xl:flex-1">
-            <h2 className="text-base font-semibold text-foreground">Seção Transversal</h2>
-            <div className="mt-4 min-h-0 flex-1 overflow-auto">
-              {confirmedSections.geometria && confirmedSections.armadura ? (
-                <TransversalSection2DFigure hx={form.hx} hy={form.hy} />
-              ) : (
-                <div className="rounded-md border border-input bg-background p-4 text-xs text-muted-foreground">
-                  Defina e confirme Geometria e Armadura para visualizar a seção transversal.
-                </div>
-              )}
+            <h2 className={TYPOGRAPHY.panelTitle}>Seção Transversal</h2>
+            <div className="mt-4 flex flex-col gap-3">
+              <TransversalSection2DFigure
+                hx={form.hx}
+                hy={form.hy}
+                nx={form.nx}
+                ny={form.ny}
+                showSection={confirmedSections.geometria && confirmedSections.armadura}
+              />
             </div>
           </section>
 
           <section className="rounded-xl border border-border bg-card p-6 xl:flex-1">
-            <h2 className="text-base font-semibold text-foreground">Esforços</h2>
+            <h2 className={TYPOGRAPHY.panelTitle}>Esforços</h2>
+            <div className="mt-4 space-y-4">
+              <div className="overflow-x-auto rounded-md border border-input bg-background">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-muted/60 text-left">
+                      <th className="border-b border-r border-input px-2 py-1">Combinação</th>
+                      <th className="border-b border-r border-input px-2 py-1">Nsk</th>
+                      <th className="border-b border-r border-input px-2 py-1">Msk,x (Topo)</th>
+                      <th className="border-b border-r border-input px-2 py-1">Msk,x (Base)</th>
+                      <th className="border-b border-r border-input px-2 py-1">Msk,y (Topo)</th>
+                      <th className="border-b border-input px-2 py-1">Msk,y (Base)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="border-r border-input px-2 py-1">{effortInputRow.combination}</td>
+                      <td className="border-r border-input px-2 py-1">{formatEffortNumber(effortInputRow.Nsk)}</td>
+                      <td className="border-r border-input px-2 py-1">{formatEffortNumber(effortInputRow.MskTopox)}</td>
+                      <td className="border-r border-input px-2 py-1">{formatEffortNumber(effortInputRow.MskBasex)}</td>
+                      <td className="border-r border-input px-2 py-1">{formatEffortNumber(effortInputRow.MskTopoy)}</td>
+                      <td className="px-2 py-1">{formatEffortNumber(effortInputRow.MskBasey)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="overflow-x-auto rounded-md border border-input bg-background">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-muted/60 text-left">
+                      <th className="border-b border-r border-input px-2 py-1">z</th>
+                      <th className="border-b border-r border-input px-2 py-1">Msd,x [{momentUnit}]</th>
+                      <th className="border-b border-r border-input px-2 py-1">Msd,y [{momentUnit}]</th>
+                      <th className="border-b border-input px-2 py-1">F.S</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {effortDesignRows.map((row) => {
+                      const fsClassName =
+                        row.fs === null
+                          ? ''
+                          : row.fs < 1
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-green-100 text-green-700';
+
+                      return (
+                        <tr key={row.z}>
+                          <td className="border-r border-input px-2 py-1">{row.z}</td>
+                          <td className="border-r border-input px-2 py-1">{formatEffortNumber(row.msdX)}</td>
+                          <td className="border-r border-input px-2 py-1">{formatEffortNumber(row.msdY)}</td>
+                          <td className={`px-2 py-1 ${fsClassName}`}>{formatEffortNumber(row.fs)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-col gap-6 overflow-hidden">
           <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-6 xl:flex-1">
-            <h2 className="text-base font-semibold text-foreground">Resultados</h2>
-            <pre className="mt-4 min-h-0 flex-1 overflow-auto rounded-md border border-input bg-background p-3 text-xs">
+            <h2 className={TYPOGRAPHY.panelTitle}>Resultados</h2>
+            <pre className={`mt-4 min-h-0 flex-1 overflow-auto rounded-md border border-input bg-background p-3 ${TYPOGRAPHY.helper}`}>
               {JSON.stringify(responseData, null, 2) || 'Nenhuma resposta ainda.'}
             </pre>
           </section>
 
           <section className="rounded-xl border border-border bg-card p-6 xl:flex-1">
-            <h2 className="text-base font-semibold text-foreground">Diagramas</h2>
-            <div className="mt-4 rounded-md border border-input bg-background p-4 text-xs text-muted-foreground">
-              Diagramas ainda não disponíveis para visualização nesta tela.
+            <h2 className={TYPOGRAPHY.panelTitle}>Diagramas</h2>
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <EffortNormalDiagram value={diagramValues.normalDesign} />
+              <EffortMomentDiagram
+                title="Msd,x"
+                unit={momentUnit}
+                topValue={diagramValues.msdXTop}
+                intermedValue={diagramValues.msdXIntermed}
+                baseValue={diagramValues.msdXBase}
+              />
+              <EffortMomentDiagram
+                title="Msd,y"
+                unit={momentUnit}
+                topValue={diagramValues.msdYTop}
+                intermedValue={diagramValues.msdYIntermed}
+                baseValue={diagramValues.msdYBase}
+              />
             </div>
           </section>
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-col gap-6 overflow-hidden">
           <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-6 xl:flex-1">
-            <h2 className="text-base font-semibold text-foreground">Chamada para API</h2>
-            <div className="mt-4 min-h-0 flex-1 overflow-auto">
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant={method === 'curvatura-aproximada' ? 'default' : 'outline'}
-                  onClick={() => setMethod('curvatura-aproximada')}
-                  type="button"
-                >
-                  Curvatura aproximada
-                </Button>
-                <Button
-                  variant={method === 'rigidez-k-aproximada' ? 'default' : 'outline'}
-                  onClick={() => setMethod('rigidez-k-aproximada')}
-                  type="button"
-                >
-                  Rigidez K aproximada
-                </Button>
-              </div>
-              <p className="mt-3 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className={TYPOGRAPHY.panelTitle}>Chamada para API</h2>
+              <Button type="button" disabled className={`h-8 px-3 ${TYPOGRAPHY.compactControl}`}>
+                Método atual: {method === 'curvatura-aproximada' ? 'Curvatura aproximada' : 'Rigidez K aproximada'}
+              </Button>
+            </div>
+            <div className="mt-4 flex min-h-0 flex-1 flex-col">
+              <p className={`mt-3 ${TYPOGRAPHY.helper}`}>
                 Endpoint atual: <span className="font-mono text-foreground">{endpoint}</span>
               </p>
-              <pre className="mt-4 overflow-auto rounded-md border border-input bg-background p-3 text-xs">
+              <pre className={`mt-4 min-h-0 flex-1 overflow-auto rounded-md border border-input bg-background p-3 ${TYPOGRAPHY.helper}`}>
                 {JSON.stringify(payload, null, 2)}
               </pre>
                     <div>
@@ -780,7 +1649,7 @@ export default function PilarSegundaOrdemLocalPage() {
                       </div>
                     </div>
               {errorMessage && (
-                <p className="mt-3 text-xs font-medium text-red-600">{errorMessage}</p>
+                <p className={`mt-3 ${TYPOGRAPHY.error}`}>{errorMessage}</p>
               )}
             </div>
           </section>
