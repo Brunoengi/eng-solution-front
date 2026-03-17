@@ -477,21 +477,48 @@ function TransversalSection2DFigure({
   );
 }
 
-function EffortNormalDiagram({ value }: { value: number }) {
+function EffortNormalDiagram({ value, showValues }: { value: number | null; showValues: boolean }) {
+  const plotValue = showValues && value !== null ? value : 0;
+  const displayValue = showValues ? value : null;
+  const plotLeft = 12;
+  const plotRight = 108;
+  const axisX = (plotLeft + plotRight) / 2;
+  const maxWidth = (Math.min(axisX - plotLeft, plotRight - axisX) - 4) * 0.5;
+  const maxAbs = Math.max(Math.abs(plotValue), 1);
+  const xValue = axisX + (plotValue / maxAbs) * maxWidth;
+  const rectX = Math.min(axisX, xValue);
+  const rectWidth = Math.abs(xValue - axisX);
+
   return (
     <div className="rounded-md border border-input bg-background p-2">
       <p className="text-center text-xs font-semibold text-foreground">Nsd (kN)</p>
       <svg viewBox="0 0 120 140" className="mx-auto h-[140px] w-full max-w-[120px]" role="img" aria-label="Diagrama de esforço normal">
-        <line x1="10" y1="20" x2="110" y2="20" stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
-        <line x1="10" y1="120" x2="110" y2="120" stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
+        <line x1={plotLeft} y1="20" x2={plotRight} y2="20" stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
+        <line x1={plotLeft} y1="120" x2={plotRight} y2="120" stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
 
-        <line x1="35" y1="20" x2="35" y2="120" stroke="currentColor" strokeWidth="1.4" />
+        <rect x={rectX} y="20" width={rectWidth} height="100" fill="#fee2e2" stroke="none" />
 
-        <rect x="35" y="20" width="28" height="100" fill="#f8c7c7" stroke="#b91c1c" strokeWidth="1.5" />
+        <line x1={axisX} y1="20" x2={xValue} y2="20" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+        <line x1={axisX} y1="120" x2={xValue} y2="120" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+        <line x1={xValue} y1="20" x2={xValue} y2="120" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
 
-        <text x="49" y="14" textAnchor="middle" fontSize="11" fill="#111827">{formatEffortNumber(value)}</text>
-        <text x="92" y="24" fontSize="10" fill="#6b7280">Topo</text>
-        <text x="92" y="124" fontSize="10" fill="#6b7280">Base</text>
+        <circle cx={xValue} cy="20" r="1.8" fill="#111827" />
+        <circle cx={xValue} cy="120" r="1.8" fill="#111827" />
+
+        <line
+          x1={axisX}
+          y1="20"
+          x2={axisX}
+          y2="120"
+          stroke="#000000"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
+
+        <text x="49" y="14" textAnchor="middle" fontSize="11" fill="#111827">{formatEffortNumber(displayValue)}</text>
+        <text x={axisX + 3} y="134" fontSize="9" fill="#000000">0</text>
+        <text x="92" y="24" fontSize="10" fill="#111827">Topo</text>
+        <text x="92" y="124" fontSize="10" fill="#111827">Base</text>
       </svg>
     </div>
   );
@@ -500,54 +527,145 @@ function EffortNormalDiagram({ value }: { value: number }) {
 function EffortMomentDiagram({
   title,
   unit,
+  firstTopValue,
+  firstIntermedValue,
+  firstBaseValue,
+  secondIntermedValue,
   topValue,
   intermedValue,
   baseValue,
+  showValues,
 }: {
   title: string;
   unit: string;
-  topValue: number;
-  intermedValue: number;
-  baseValue: number;
+  firstTopValue: number | null;
+  firstIntermedValue: number | null;
+  firstBaseValue: number | null;
+  secondIntermedValue: number | null;
+  topValue: number | null;
+  intermedValue: number | null;
+  baseValue: number | null;
+  showValues: boolean;
 }) {
+  const firstTopPlotValue = showValues && firstTopValue !== null ? firstTopValue : 0;
+  const firstIntermedPlotValue = showValues && firstIntermedValue !== null ? firstIntermedValue : 0;
+  const firstBasePlotValue = showValues && firstBaseValue !== null ? firstBaseValue : 0;
+
+  const topPlotValue = showValues && topValue !== null ? topValue : 0;
+  const intermedPlotValue = showValues && intermedValue !== null ? intermedValue : 0;
+  const basePlotValue = showValues && baseValue !== null ? baseValue : 0;
+
+  const plotLeft = 12;
+  const plotRight = 168;
   const yTop = 20;
   const yIntermed = 70;
   const yBase = 120;
-  const axisX = 35;
-  const maxWidth = 36;
-  const maxAbs = Math.max(Math.abs(topValue), Math.abs(intermedValue), Math.abs(baseValue), 1);
+  const axisX = (plotLeft + plotRight) / 2;
+  const maxWidth = (Math.min(axisX - plotLeft, plotRight - axisX) - 4) * 0.5;
+  const maxAbs = Math.max(
+    Math.abs(firstTopPlotValue),
+    Math.abs(firstIntermedPlotValue),
+    Math.abs(firstBasePlotValue),
+    Math.abs(topPlotValue),
+    Math.abs(intermedPlotValue),
+    Math.abs(basePlotValue),
+    1,
+  );
   const mapX = (value: number) => axisX + (value / maxAbs) * maxWidth;
+  const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-  const xTop = mapX(topValue);
-  const xIntermed = mapX(intermedValue);
-  const xBase = mapX(baseValue);
-  const topLabelX = xTop + 4;
-  const intermedLabelX = xIntermed + 4;
-  const baseLabelX = xBase + 4;
+  const getLabelX = (x: number) => {
+    const isRight = x >= axisX;
+    const desiredX = isRight ? x + 8 : x - 8;
+    return clamp(desiredX, plotLeft + 8, plotRight - 8);
+  };
+
+  const getLabelAnchor = (x: number): 'start' | 'end' => (x >= axisX ? 'start' : 'end');
+
+  const xFirstTop = clamp(mapX(firstTopPlotValue), plotLeft, plotRight);
+  const xFirstIntermed = clamp(mapX(firstIntermedPlotValue), plotLeft, plotRight);
+  const xFirstBase = clamp(mapX(firstBasePlotValue), plotLeft, plotRight);
+
+  const xTop = clamp(mapX(topPlotValue), plotLeft, plotRight);
+  const xIntermed = clamp(mapX(intermedPlotValue), plotLeft, plotRight);
+  const xBase = clamp(mapX(basePlotValue), plotLeft, plotRight);
+  const topLabelX = getLabelX(xTop);
+  const intermedLabelX = getLabelX(xIntermed);
+  const baseLabelX = getLabelX(xBase);
+  const topLabelAnchor = getLabelAnchor(xTop);
+  const intermedLabelAnchor = getLabelAnchor(xIntermed);
+  const baseLabelAnchor = getLabelAnchor(xBase);
+  const m2LabelX = clamp((xFirstIntermed + xIntermed) / 2, plotLeft + 8, plotRight - 8);
+  const m2LabelAnchor: 'start' | 'end' = xIntermed >= xFirstIntermed ? 'start' : 'end';
+  const m2LabelY = yIntermed + 13;
 
   return (
     <div className="rounded-md border border-input bg-background p-2">
       <p className="text-center text-xs font-semibold text-foreground">{title} ({unit})</p>
-      <svg viewBox="0 0 120 140" className="mx-auto h-[140px] w-full max-w-[120px]" role="img" aria-label={`Diagrama de ${title}`}>
-        <line x1="10" y1="20" x2="110" y2="20" stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
-        <line x1="10" y1="120" x2="110" y2="120" stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
-
-        <line x1={axisX} y1={yTop} x2={axisX} y2={yBase} stroke="currentColor" strokeWidth="1.4" />
+      <svg viewBox="0 0 180 140" className="mx-auto h-[140px] w-full max-w-[180px]" role="img" aria-label={`Diagrama de ${title}`}>
+        <line x1={plotLeft} y1="20" x2={plotRight} y2="20" stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
+        <line x1={plotLeft} y1={yIntermed} x2={plotRight} y2={yIntermed} stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
+        <line x1={plotLeft} y1="120" x2={plotRight} y2="120" stroke="currentColor" strokeOpacity="0.35" strokeDasharray="5 4" />
 
         <path
-          d={`M ${axisX} ${yTop} L ${xTop} ${yTop} L ${xIntermed} ${yIntermed} L ${xBase} ${yBase} L ${axisX} ${yBase} Z`}
-          fill="#f8c7c7"
-          stroke="#b91c1c"
-          strokeWidth="1.5"
+          d={`M ${axisX} ${yTop} L ${xFirstTop} ${yTop} L ${xFirstIntermed} ${yIntermed} L ${xFirstBase} ${yBase} L ${axisX} ${yBase} Z`}
+          fill="#fee2e2"
+          stroke="none"
         />
 
-        <circle cx={xTop} cy={yTop} r="1.6" fill="#b91c1c" />
-        <circle cx={xIntermed} cy={yIntermed} r="1.6" fill="#b91c1c" />
-        <circle cx={xBase} cy={yBase} r="1.6" fill="#b91c1c" />
+        <path
+          d={`M ${xFirstTop} ${yTop} L ${xFirstIntermed} ${yIntermed} L ${xFirstBase} ${yBase} L ${xBase} ${yBase} L ${xIntermed} ${yIntermed} L ${xTop} ${yTop} Z`}
+          fill="#93c5fd"
+          fillOpacity="0.32"
+          stroke="none"
+        />
 
-        <text x={topLabelX} y={yTop - 3} fontSize="10" fill="#111827">{formatEffortNumber(topValue)}</text>
-        <text x={intermedLabelX} y={yIntermed - 2} fontSize="10" fill="#111827">{formatEffortNumber(intermedValue)}</text>
-        <text x={baseLabelX} y={yBase + 11} fontSize="10" fill="#111827">{formatEffortNumber(baseValue)}</text>
+        <path d={`M ${xFirstTop} ${yTop} L ${xFirstIntermed} ${yIntermed} L ${xFirstBase} ${yBase}`} fill="none" stroke="#ef4444" strokeWidth="1.8" />
+
+        <line x1={axisX} y1={yTop} x2={xFirstTop} y2={yTop} stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+        <line x1={axisX} y1={yIntermed} x2={xFirstIntermed} y2={yIntermed} stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+        <line x1={axisX} y1={yBase} x2={xFirstBase} y2={yBase} stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+
+        <line x1={xFirstIntermed} y1={yIntermed} x2={xIntermed} y2={yIntermed} stroke="#2563eb" strokeWidth="2" strokeLinecap="round" />
+
+        <path d={`M ${xTop} ${yTop} L ${xIntermed} ${yIntermed} L ${xBase} ${yBase}`} fill="none" stroke="#2563eb" strokeWidth="1.8" />
+
+        <circle cx={xFirstTop} cy={yTop} r="1.3" fill="#fca5a5" />
+        <circle cx={xFirstIntermed} cy={yIntermed} r="1.3" fill="#fca5a5" />
+        <circle cx={xFirstBase} cy={yBase} r="1.3" fill="#fca5a5" />
+
+        <circle cx={xTop} cy={yTop} r="1.8" fill="#111827" />
+        <circle cx={xIntermed} cy={yIntermed} r="1.8" fill="#111827" />
+        <circle cx={xBase} cy={yBase} r="1.8" fill="#111827" />
+
+        <line
+          x1={axisX}
+          y1={yTop}
+          x2={axisX}
+          y2={yBase}
+          stroke="#000000"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
+
+        <text x={plotLeft} y="136" fontSize="9" fill="#9f1239">1a ordem</text>
+        <text x={plotRight} y="136" textAnchor="end" fontSize="9" fill="#1d4ed8">2a ordem (delta)</text>
+
+        <text
+          x={m2LabelX}
+          y={m2LabelY}
+          textAnchor={m2LabelAnchor}
+          fontSize="9"
+          fill="#1d4ed8"
+        >
+          {showValues ? `M2: ${formatEffortNumber(secondIntermedValue)}` : 'M2: -'}
+        </text>
+
+        <text x={axisX + 3} y={yBase + 12} fontSize="9" fill="#000000">0</text>
+
+        <text x={topLabelX} y={yTop - 3} textAnchor={topLabelAnchor} fontSize="10" fill="#111827">{showValues ? formatEffortNumber(topValue) : '-'}</text>
+        <text x={intermedLabelX} y={yIntermed - 2} textAnchor={intermedLabelAnchor} fontSize="10" fill="#111827">{showValues ? formatEffortNumber(intermedValue) : '-'}</text>
+        <text x={baseLabelX} y={yBase + 11} textAnchor={baseLabelAnchor} fontSize="10" fill="#111827">{showValues ? formatEffortNumber(baseValue) : '-'}</text>
       </svg>
     </div>
   );
@@ -1093,6 +1211,11 @@ export default function PilarSegundaOrdemLocalPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [responseData, setResponseData] = useState<unknown | null>(null);
 
+  const allInputsConfirmed = useMemo(
+    () => Object.values(confirmedSections).every(Boolean),
+    [confirmedSections],
+  );
+
   const resetArmaduraAfterGeometryChange = useCallback(() => {
     setForm((prev) => ({
       ...prev,
@@ -1124,7 +1247,7 @@ export default function PilarSegundaOrdemLocalPage() {
       nx: form.nx,
       ny: form.ny,
       dlinha: { value: form.dlinha, unit: 'cm' },
-      Nsk: { value: form.Nsk, unit: 'kN' },
+      Nsk: { value: Math.abs(form.Nsk), unit: 'kN' },
       MskTopox: { value: convertMomentUnitValue(form.MskTopox, momentUnit, BACKEND_MOMENT_UNIT), unit: BACKEND_MOMENT_UNIT },
       MskBasex: { value: convertMomentUnitValue(form.MskBasex, momentUnit, BACKEND_MOMENT_UNIT), unit: BACKEND_MOMENT_UNIT },
       MskTopoy: { value: convertMomentUnitValue(form.MskTopoy, momentUnit, BACKEND_MOMENT_UNIT), unit: BACKEND_MOMENT_UNIT },
@@ -1139,47 +1262,60 @@ export default function PilarSegundaOrdemLocalPage() {
     [method],
   );
 
-  const effortInputRow = useMemo(
-    () => ({
+  const shouldShowEffortValues = useMemo(() => {
+    const hasEsforcos = extractFirstNumber(responseData, ['esforcos.Nsd.value', 'esforcos.Nsd']) !== null;
+    const hasDiagrama = Array.isArray(getByPath(responseData, 'diagrama.z'));
+
+    return allInputsConfirmed && (hasEsforcos || hasDiagrama);
+  }, [allInputsConfirmed, responseData]);
+
+  const resolveMomentUnit = useCallback((unit: unknown): MomentUnit => {
+    return unit === 'kN*m' ? 'kN*m' : 'kN*cm';
+  }, []);
+
+  const effortInputRow = useMemo(() => {
+    const paramsMomentUnit = resolveMomentUnit(getByPath(responseData, 'params.moments.x.topo.unit'));
+
+    const mTopX = extractFirstNumber(responseData, ['params.moments.x.topo.value', 'params.moments.x.topo']);
+    const mBaseX = extractFirstNumber(responseData, ['params.moments.x.base.value', 'params.moments.x.base']);
+    const mTopY = extractFirstNumber(responseData, ['params.moments.y.topo.value', 'params.moments.y.topo']);
+    const mBaseY = extractFirstNumber(responseData, ['params.moments.y.base.value', 'params.moments.y.base']);
+
+    const convertForDisplay = (value: number | null) => {
+      if (value === null) {
+        return null;
+      }
+
+      return convertMomentUnitValue(value, paramsMomentUnit, momentUnit);
+    };
+
+    return {
       combination: 1,
-      Nsk: -Math.abs(form.Nsk),
-      MskTopox: form.MskTopox,
-      MskBasex: form.MskBasex,
-      MskTopoy: form.MskTopoy,
-      MskBasey: form.MskBasey,
-    }),
-    [form.MskBasex, form.MskBasey, form.MskTopox, form.MskTopoy, form.Nsk],
-  );
+      Nsk: extractFirstNumber(responseData, ['params.Nsd.value', 'params.Nsd']),
+      MskTopox: convertForDisplay(mTopX),
+      MskBasex: convertForDisplay(mBaseX),
+      MskTopoy: convertForDisplay(mTopY),
+      MskBasey: convertForDisplay(mBaseY),
+    };
+  }, [momentUnit, resolveMomentUnit, responseData]);
 
   const effortDesignRows = useMemo(() => {
-    const msdTopX = Math.abs(form.MskTopox * form.gammaf);
-    const msdTopY = Math.abs(form.MskTopoy * form.gammaf);
-    const msdBaseX = Math.abs(form.MskBasex * form.gammaf);
-    const msdBaseY = Math.abs(form.MskBasey * form.gammaf);
+    const esforcosMomentUnit = resolveMomentUnit(getByPath(responseData, 'esforcos.Msdx.topo.unit'));
 
-    const intermedXRaw = extractFirstNumber(responseData, [
-      'results.x.MsdTotal.value',
-      'results.x.MsdTotal',
-      'x.MsdTotal.value',
-      'x.MsdTotal',
-      'MsdIntermedX',
-      'MsdIntermediarioX',
-    ]);
-    const intermedX = intermedXRaw === null
-      ? null
-      : convertMomentUnitValue(intermedXRaw, BACKEND_MOMENT_UNIT, momentUnit);
+    const convertForDisplay = (value: number | null) => {
+      if (value === null) {
+        return null;
+      }
 
-    const intermedYRaw = extractFirstNumber(responseData, [
-      'results.y.MsdTotal.value',
-      'results.y.MsdTotal',
-      'y.MsdTotal.value',
-      'y.MsdTotal',
-      'MsdIntermedY',
-      'MsdIntermediarioY',
-    ]);
-    const intermedY = intermedYRaw === null
-      ? null
-      : convertMomentUnitValue(intermedYRaw, BACKEND_MOMENT_UNIT, momentUnit);
+      return convertMomentUnitValue(value, esforcosMomentUnit, momentUnit);
+    };
+
+    const msdTopX = convertForDisplay(extractFirstNumber(responseData, ['esforcos.Msdx.topo.value', 'esforcos.Msdx.topo']));
+    const msdTopY = convertForDisplay(extractFirstNumber(responseData, ['esforcos.Msdy.topo.value', 'esforcos.Msdy.topo']));
+    const intermedX = convertForDisplay(extractFirstNumber(responseData, ['esforcos.Msdx.intermediario.value', 'esforcos.Msdx.intermediario']));
+    const intermedY = convertForDisplay(extractFirstNumber(responseData, ['esforcos.Msdy.intermediario.value', 'esforcos.Msdy.intermediario']));
+    const msdBaseX = convertForDisplay(extractFirstNumber(responseData, ['esforcos.Msdx.base.value', 'esforcos.Msdx.base']));
+    const msdBaseY = convertForDisplay(extractFirstNumber(responseData, ['esforcos.Msdy.base.value', 'esforcos.Msdy.base']));
 
     const fsTop = extractFirstNumber(responseData, [
       'results.topo.fs',
@@ -1208,29 +1344,104 @@ export default function PilarSegundaOrdemLocalPage() {
       { z: 'Intermed.', msdX: intermedX, msdY: intermedY, fs: fsIntermed },
       { z: '0 (Base)', msdX: msdBaseX, msdY: msdBaseY, fs: fsBase },
     ];
-  }, [form.MskBasex, form.MskBasey, form.MskTopox, form.MskTopoy, form.gammaf, momentUnit, responseData]);
+  }, [momentUnit, resolveMomentUnit, responseData]);
 
   const diagramValues = useMemo(() => {
-    const normalDesign = -Math.abs(form.Nsk * form.gammaf);
+    const nsdValuesRaw = getByPath(responseData, 'diagrama.Nsd.values');
+    const msdxValuesRaw = getByPath(responseData, 'diagrama.Msdx.values');
+    const msdyValuesRaw = getByPath(responseData, 'diagrama.Msdy.values');
 
-    const msdXTop = effortDesignRows[0]?.msdX ?? 0;
-    const msdXBase = effortDesignRows[2]?.msdX ?? 0;
-    const msdXIntermed = effortDesignRows[1]?.msdX ?? (msdXTop + msdXBase) / 2;
+    const nsdValues = Array.isArray(nsdValuesRaw)
+      ? nsdValuesRaw.map((value) => (typeof value === 'number' && Number.isFinite(value) ? value : null))
+      : [];
 
-    const msdYTop = effortDesignRows[0]?.msdY ?? 0;
-    const msdYBase = effortDesignRows[2]?.msdY ?? 0;
-    const msdYIntermed = effortDesignRows[1]?.msdY ?? (msdYTop + msdYBase) / 2;
+    const msdxUnit = resolveMomentUnit(getByPath(responseData, 'diagrama.Msdx.unit'));
+    const msdyUnit = resolveMomentUnit(getByPath(responseData, 'diagrama.Msdy.unit'));
+
+    const msdxValues = Array.isArray(msdxValuesRaw)
+      ? msdxValuesRaw.map((value) => {
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+          return null;
+        }
+
+        return convertMomentUnitValue(value, msdxUnit, momentUnit);
+      })
+      : [];
+
+    const msdyValues = Array.isArray(msdyValuesRaw)
+      ? msdyValuesRaw.map((value) => {
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+          return null;
+        }
+
+        return convertMomentUnitValue(value, msdyUnit, momentUnit);
+      })
+      : [];
+
+    const resultXMomentUnit = resolveMomentUnit(getByPath(responseData, 'results.x.M1dA.unit'));
+    const resultYMomentUnit = resolveMomentUnit(getByPath(responseData, 'results.y.M1dA.unit'));
+
+    const convertFrom = (value: number | null, from: MomentUnit) => {
+      if (value === null) {
+        return null;
+      }
+
+      return convertMomentUnitValue(value, from, momentUnit);
+    };
+
+    const firstXTop = msdxValues[0] ?? null;
+    const firstXBase = msdxValues[2] ?? null;
+    const firstYTop = msdyValues[0] ?? null;
+    const firstYBase = msdyValues[2] ?? null;
+
+    const alphaBX = extractFirstNumber(responseData, ['results.x.alphaB.value', 'results.x.alphaB']);
+    const alphaBY = extractFirstNumber(responseData, ['results.y.alphaB.value', 'results.y.alphaB']);
+    const resultSignX = extractFirstNumber(responseData, ['results.x.resultSign.value', 'results.x.resultSign']);
+    const resultSignY = extractFirstNumber(responseData, ['results.y.resultSign.value', 'results.y.resultSign']);
+    const m1dAX = extractFirstNumber(responseData, ['results.x.M1dA.value', 'results.x.M1dA']);
+    const m1dAY = extractFirstNumber(responseData, ['results.y.M1dA.value', 'results.y.M1dA']);
+
+    const m2dX = extractFirstNumber(responseData, ['results.x.M2d.value', 'results.x.M2d']);
+    const m2dY = extractFirstNumber(responseData, ['results.y.M2d.value', 'results.y.M2d']);
+
+    const firstXIntermedRaw =
+      alphaBX === null || resultSignX === null || m1dAX === null
+        ? null
+        : resultSignX * alphaBX * m1dAX;
+
+    const firstYIntermedRaw =
+      alphaBY === null || resultSignY === null || m1dAY === null
+        ? null
+        : resultSignY * alphaBY * m1dAY;
+
+    const firstXIntermed = convertFrom(firstXIntermedRaw, resultXMomentUnit);
+    const firstYIntermed = convertFrom(firstYIntermedRaw, resultYMomentUnit);
+    const secondXIntermed = convertFrom(m2dX, resultXMomentUnit);
+    const secondYIntermed = convertFrom(m2dY, resultYMomentUnit);
 
     return {
-      normalDesign,
-      msdXTop,
-      msdXIntermed,
-      msdXBase,
-      msdYTop,
-      msdYIntermed,
-      msdYBase,
+      normalDesign: nsdValues[0] ?? null,
+      firstXTop,
+      firstXIntermed,
+      firstXBase,
+      secondXIntermed,
+      msdXTop: msdxValues[0] ?? null,
+      msdXIntermed: msdxValues[1] ?? null,
+      msdXBase: msdxValues[2] ?? null,
+      firstYTop,
+      firstYIntermed,
+      firstYBase,
+      secondYIntermed,
+      msdYTop: msdyValues[0] ?? null,
+      msdYIntermed: msdyValues[1] ?? null,
+      msdYBase: msdyValues[2] ?? null,
     };
-  }, [effortDesignRows, form.Nsk, form.gammaf]);
+  }, [momentUnit, resolveMomentUnit, responseData]);
+
+  const formatVisibleEffortNumber = useCallback(
+    (value: number | null) => (shouldShowEffortValues ? formatEffortNumber(value) : '-'),
+    [shouldShowEffortValues],
+  );
 
   const onMomentUnitChange = (nextUnit: MomentUnit) => {
     if (nextUnit === momentUnit) {
@@ -1289,6 +1500,25 @@ export default function PilarSegundaOrdemLocalPage() {
     }));
     resetArmaduraAfterGeometryChange();
   };
+
+  const onMethodChange = useCallback((nextMethod: Method) => {
+    if (nextMethod === method) {
+      return;
+    }
+
+    setMethod(nextMethod);
+    setResponseData(null);
+    setErrorMessage(null);
+    setLoading(false);
+    setConfirmedSections({
+      geometria: false,
+      materiais: false,
+      armadura: false,
+      esforcos: false,
+    });
+    setInputSection('geometria');
+    setSecondaryDock('entradas');
+  }, [method]);
 
   const runCalculation = async () => {
     setErrorMessage(null);
@@ -1481,7 +1711,7 @@ export default function PilarSegundaOrdemLocalPage() {
         confirmedSections={confirmedSections}
         runCalculation={runCalculation}
         loading={loading}
-        canCalculate={Object.values(confirmedSections).every(Boolean)}
+        canCalculate={allInputsConfirmed}
         confirmCurrentSection={confirmCurrentSection}
         onGeometryChange={onGeometryChange}
         momentUnit={momentUnit}
@@ -1493,7 +1723,7 @@ export default function PilarSegundaOrdemLocalPage() {
         open={secondaryDock === 'metodo'}
         onClose={() => setSecondaryDock('none')}
         method={method}
-        setMethod={setMethod}
+        setMethod={onMethodChange}
       />
       <UnitsDockPanel
         open={secondaryDock === 'units'}
@@ -1553,12 +1783,12 @@ export default function PilarSegundaOrdemLocalPage() {
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="border-r border-input px-2 py-1">{effortInputRow.combination}</td>
-                      <td className="border-r border-input px-2 py-1">{formatEffortNumber(effortInputRow.Nsk)}</td>
-                      <td className="border-r border-input px-2 py-1">{formatEffortNumber(effortInputRow.MskTopox)}</td>
-                      <td className="border-r border-input px-2 py-1">{formatEffortNumber(effortInputRow.MskBasex)}</td>
-                      <td className="border-r border-input px-2 py-1">{formatEffortNumber(effortInputRow.MskTopoy)}</td>
-                      <td className="px-2 py-1">{formatEffortNumber(effortInputRow.MskBasey)}</td>
+                      <td className="border-r border-input px-2 py-1">{shouldShowEffortValues ? effortInputRow.combination : '-'}</td>
+                      <td className="border-r border-input px-2 py-1">{formatVisibleEffortNumber(effortInputRow.Nsk)}</td>
+                      <td className="border-r border-input px-2 py-1">{formatVisibleEffortNumber(effortInputRow.MskTopox)}</td>
+                      <td className="border-r border-input px-2 py-1">{formatVisibleEffortNumber(effortInputRow.MskBasex)}</td>
+                      <td className="border-r border-input px-2 py-1">{formatVisibleEffortNumber(effortInputRow.MskTopoy)}</td>
+                      <td className="px-2 py-1">{formatVisibleEffortNumber(effortInputRow.MskBasey)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -1586,9 +1816,9 @@ export default function PilarSegundaOrdemLocalPage() {
                       return (
                         <tr key={row.z}>
                           <td className="border-r border-input px-2 py-1">{row.z}</td>
-                          <td className="border-r border-input px-2 py-1">{formatEffortNumber(row.msdX)}</td>
-                          <td className="border-r border-input px-2 py-1">{formatEffortNumber(row.msdY)}</td>
-                          <td className={`px-2 py-1 ${fsClassName}`}>{formatEffortNumber(row.fs)}</td>
+                          <td className="border-r border-input px-2 py-1">{formatVisibleEffortNumber(row.msdX)}</td>
+                          <td className="border-r border-input px-2 py-1">{formatVisibleEffortNumber(row.msdY)}</td>
+                          <td className={`px-2 py-1 ${fsClassName}`}>{formatVisibleEffortNumber(row.fs)}</td>
                         </tr>
                       );
                     })}
@@ -1610,20 +1840,30 @@ export default function PilarSegundaOrdemLocalPage() {
           <section className="rounded-xl border border-border bg-card p-6 xl:flex-1">
             <h2 className={TYPOGRAPHY.panelTitle}>Diagramas</h2>
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-              <EffortNormalDiagram value={diagramValues.normalDesign} />
+              <EffortNormalDiagram value={diagramValues.normalDesign} showValues={shouldShowEffortValues} />
               <EffortMomentDiagram
                 title="Msd,x"
                 unit={momentUnit}
+                firstTopValue={diagramValues.firstXTop}
+                firstIntermedValue={diagramValues.firstXIntermed}
+                firstBaseValue={diagramValues.firstXBase}
+                secondIntermedValue={diagramValues.secondXIntermed}
                 topValue={diagramValues.msdXTop}
                 intermedValue={diagramValues.msdXIntermed}
                 baseValue={diagramValues.msdXBase}
+                showValues={shouldShowEffortValues}
               />
               <EffortMomentDiagram
                 title="Msd,y"
                 unit={momentUnit}
+                firstTopValue={diagramValues.firstYTop}
+                firstIntermedValue={diagramValues.firstYIntermed}
+                firstBaseValue={diagramValues.firstYBase}
+                secondIntermedValue={diagramValues.secondYIntermed}
                 topValue={diagramValues.msdYTop}
                 intermedValue={diagramValues.msdYIntermed}
                 baseValue={diagramValues.msdYBase}
+                showValues={shouldShowEffortValues}
               />
             </div>
           </section>
