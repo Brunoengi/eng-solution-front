@@ -20,6 +20,7 @@ const toPositive = (value: number | undefined, fallback: number): number => {
 
 const DIMENSION_COLOR = 0x2563eb;
 const TICK_HALF_SIZE = 1.8;
+const SECTION_PALETTE = [0x334155, 0x3f3f46, 0x374151, 0x3b4a5a, 0x424b57];
 
 const disposeObject = (object: THREE.Object3D) => {
   object.traverse((child) => {
@@ -285,14 +286,26 @@ const createTriangularPrism = (width: number, height: number, depth: number, dir
 
 const createSectionGroup = (sectionType: string, parameters: Record<string, number>) => {
   const group = new THREE.Group();
-  const material = new THREE.MeshNormalMaterial({ flatShading: true });
   const depth = 24;
+  let paletteIndex = 0;
+
+  const nextSectionMaterial = () => {
+    const color = SECTION_PALETTE[paletteIndex % SECTION_PALETTE.length];
+    paletteIndex += 1;
+
+    return new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.62,
+      metalness: 0.08,
+      flatShading: true,
+    });
+  };
 
   addOriginMarker(group, depth);
 
   const addBox = (width: number, height: number, centerY: number, centerX = 0) => {
     const geometry = new THREE.BoxGeometry(width, height, depth);
-    const mesh = new THREE.Mesh(geometry, material.clone());
+    const mesh = new THREE.Mesh(geometry, nextSectionMaterial());
     mesh.position.set(centerX, centerY, 0);
     group.add(mesh);
   };
@@ -306,7 +319,7 @@ const createSectionGroup = (sectionType: string, parameters: Record<string, numb
     vertical: 'up' | 'down',
   ) => {
     const geometry = createTriangularPrism(width, height, depth, direction, vertical);
-    const mesh = new THREE.Mesh(geometry, material.clone());
+    const mesh = new THREE.Mesh(geometry, nextSectionMaterial());
     mesh.position.set(anchorX, anchorY, 0);
     group.add(mesh);
   };
@@ -327,7 +340,7 @@ const createSectionGroup = (sectionType: string, parameters: Record<string, numb
     const radialSegments = Math.max(3, Math.floor(toPositive(parameters.points, 360)));
     const geometry = new THREE.CylinderGeometry(r, r, depth, radialSegments);
     geometry.rotateX(Math.PI / 2);
-    const mesh = new THREE.Mesh(geometry, material.clone());
+    const mesh = new THREE.Mesh(geometry, nextSectionMaterial());
     group.add(mesh);
 
     const zDim = depth / 2 + 4;

@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar, SidebarToggleButton, type MenuItem } from '@/components/user/molecules/sidebar';
+import { ApiRequestResponsePanel } from '@/components/user/molecules/api-request-response-panel';
+import { DashboardPanelCard } from '@/components/user/molecules/dashboard-panel-card';
+import { useLocalSecondOrderColumn } from '@/hooks/features/use-local-second-order-column';
+import { convertMomentUnitValue, resolveMomentUnit, type MomentUnit } from '@/domain/shared/moment-unit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,11 +35,12 @@ const DEFAULT_FORM = {
   MskBasey: 10,
 };
 
+const FIXED_NY = 2;
+
 type Method = 'curvatura-aproximada' | 'rigidez-k-aproximada';
 type InputSection = 'geometria' | 'materiais' | 'armadura' | 'esforcos';
 type SecondaryDock = 'none' | 'entradas' | 'metodo' | 'memorial' | 'units';
 type MemorialSection = 'apiCall' | 'apiOutput';
-type MomentUnit = 'kN*m' | 'kN*cm';
 
 const INPUT_SECTION_LABELS: Record<InputSection, string> = {
   geometria: 'Geometria',
@@ -166,18 +171,6 @@ function formatEffortNumber(value: number | null): string {
   }
 
   return Number(value.toFixed(2)).toString();
-}
-
-function convertMomentUnitValue(value: number, from: MomentUnit, to: MomentUnit): number {
-  if (from === to) {
-    return value;
-  }
-
-  if (from === 'kN*m' && to === 'kN*cm') {
-    return value * 100;
-  }
-
-  return value / 100;
 }
 
 function GeometryReferenceFigure({
@@ -336,7 +329,7 @@ function ArmaduraReferenceFigure({ nx, ny, dlinha }: { nx: number; ny: number; d
           <text x={dLineVerticalX + 8} y={yTop + coverPx / 2 + 4} fontSize="12" fontWeight="700">d'</text>
         </svg>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">nx e ny controlam a quantidade de barras por direção.</p>
+      <p className="mt-2 text-xs text-muted-foreground">nx controla a quantidade de barras em x. ny esta fixo em 2 nesta versao.</p>
     </div>
   );
 }
@@ -907,7 +900,16 @@ function InputDockPanel({
                 </div>
                 <div>
                   <Label htmlFor="ny" className={labelClass}>n<sub>y</sub></Label>
-                  <Input id="ny" type="number" min={0} value={form.ny} onChange={(e) => updateNumber('ny', e.target.valueAsNumber)} step="1" />
+                  <Input
+                    id="ny"
+                    type="number"
+                    min={FIXED_NY}
+                    value={FIXED_NY}
+                    disabled
+                    readOnly
+                    step="1"
+                    className={`${TYPOGRAPHY.compactControl} bg-muted/70 text-muted-foreground`}
+                  />
                 </div>
               </div>
             </section>
@@ -1202,14 +1204,19 @@ export default function PilarSegundaOrdemLocalPage() {
   });
   const [form, setForm] = useState(DEFAULT_FORM);
   const [momentUnit, setMomentUnit] = useState<MomentUnit>('kN*m');
-  const [loading, setLoading] = useState(false);
   const [isGeneratingMemorial, setIsGeneratingMemorial] = useState(false);
   const [memorialSections, setMemorialSections] = useState<Record<MemorialSection, boolean>>({
     apiCall: true,
     apiOutput: true,
   });
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [responseData, setResponseData] = useState<unknown | null>(null);
+  const {
+    loading,
+    errorMessage,
+    responseData,
+    runCalculation,
+    resetCalculation,
+    setErrorMessage,
+  } = useLocalSecondOrderColumn();
 
   const allInputsConfirmed = useMemo(
     () => Object.values(confirmedSections).every(Boolean),
@@ -1269,10 +1276,6 @@ export default function PilarSegundaOrdemLocalPage() {
     return allInputsConfirmed && (hasEsforcos || hasDiagrama);
   }, [allInputsConfirmed, responseData]);
 
-  const resolveMomentUnit = useCallback((unit: unknown): MomentUnit => {
-    return unit === 'kN*m' ? 'kN*m' : 'kN*cm';
-  }, []);
-
   const effortInputRow = useMemo(() => {
     const paramsMomentUnit = resolveMomentUnit(getByPath(responseData, 'params.moments.x.topo.unit'));
 
@@ -1297,7 +1300,7 @@ export default function PilarSegundaOrdemLocalPage() {
       MskTopoy: convertForDisplay(mTopY),
       MskBasey: convertForDisplay(mBaseY),
     };
-  }, [momentUnit, resolveMomentUnit, responseData]);
+  }, [momentUnit, responseData]);
 
   const effortDesignRows = useMemo(() => {
     const esforcosMomentUnit = resolveMomentUnit(getByPath(responseData, 'esforcos.Msdx.topo.unit'));
@@ -1344,7 +1347,7 @@ export default function PilarSegundaOrdemLocalPage() {
       { z: 'Intermed.', msdX: intermedX, msdY: intermedY, fs: fsIntermed },
       { z: '0 (Base)', msdX: msdBaseX, msdY: msdBaseY, fs: fsBase },
     ];
-  }, [momentUnit, resolveMomentUnit, responseData]);
+  }, [momentUnit, responseData]);
 
   const diagramValues = useMemo(() => {
     const nsdValuesRaw = getByPath(responseData, 'diagrama.Nsd.values');
@@ -1436,12 +1439,18 @@ export default function PilarSegundaOrdemLocalPage() {
       msdYIntermed: msdyValues[1] ?? null,
       msdYBase: msdyValues[2] ?? null,
     };
-  }, [momentUnit, resolveMomentUnit, responseData]);
+  }, [momentUnit, responseData]);
 
   const formatVisibleEffortNumber = useCallback(
     (value: number | null) => (shouldShowEffortValues ? formatEffortNumber(value) : '-'),
     [shouldShowEffortValues],
   );
+
+  const calculatedResultsPreview = useMemo(() => {
+    const calculatedResults = getByPath(responseData, 'results');
+
+    return JSON.stringify(calculatedResults, null, 2) || 'Nenhum resultado ainda.';
+  }, [responseData]);
 
   const onMomentUnitChange = (nextUnit: MomentUnit) => {
     if (nextUnit === momentUnit) {
@@ -1459,6 +1468,14 @@ export default function PilarSegundaOrdemLocalPage() {
   };
 
   const updateNumber = (field: keyof typeof DEFAULT_FORM, value: number) => {
+    if (field === 'ny') {
+      setForm((prev) => ({
+        ...prev,
+        ny: FIXED_NY,
+      }));
+      return;
+    }
+
     if (Number.isNaN(value)) {
       return;
     }
@@ -1507,9 +1524,7 @@ export default function PilarSegundaOrdemLocalPage() {
     }
 
     setMethod(nextMethod);
-    setResponseData(null);
-    setErrorMessage(null);
-    setLoading(false);
+    resetCalculation();
     setConfirmedSections({
       geometria: false,
       materiais: false,
@@ -1518,55 +1533,11 @@ export default function PilarSegundaOrdemLocalPage() {
     });
     setInputSection('geometria');
     setSecondaryDock('entradas');
-  }, [method]);
+  }, [method, resetCalculation]);
 
-  const runCalculation = async () => {
-    setErrorMessage(null);
-    setResponseData(null);
-
-    setLoading(true);
-
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const raw = await response.text();
-      let parsedBody: unknown = raw;
-
-      try {
-        parsedBody = raw ? JSON.parse(raw) : null;
-      } catch {
-        parsedBody = raw;
-      }
-
-      if (!response.ok) {
-        const apiError =
-          typeof parsedBody === 'object' &&
-          parsedBody !== null &&
-          'upstreamBody' in parsedBody &&
-          typeof parsedBody.upstreamBody === 'object' &&
-          parsedBody.upstreamBody !== null &&
-          'message' in parsedBody.upstreamBody
-            ? String(parsedBody.upstreamBody.message)
-            : 'Erro ao calcular pilar';
-
-        setErrorMessage(apiError);
-        setResponseData(parsedBody);
-        return;
-      }
-
-      setResponseData(parsedBody);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Erro de comunicacao com a API.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const handleRunCalculation = useCallback(async () => {
+    await runCalculation(endpoint, payload);
+  }, [endpoint, payload, runCalculation]);
 
   const confirmCurrentSection = () => {
     setConfirmedSections((prev) => ({
@@ -1709,7 +1680,7 @@ export default function PilarSegundaOrdemLocalPage() {
         inputSection={inputSection}
         setInputSection={setInputSection}
         confirmedSections={confirmedSections}
-        runCalculation={runCalculation}
+        runCalculation={handleRunCalculation}
         loading={loading}
         canCalculate={allInputsConfirmed}
         confirmCurrentSection={confirmCurrentSection}
@@ -1753,9 +1724,8 @@ export default function PilarSegundaOrdemLocalPage() {
 
       <div className="grid min-h-0 w-full flex-1 grid-cols-1 gap-6 overflow-hidden xl:grid-cols-3">
         <div className="flex min-h-0 min-w-0 flex-col gap-6 overflow-hidden">
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-6 xl:flex-1">
-            <h2 className={TYPOGRAPHY.panelTitle}>Seção Transversal</h2>
-            <div className="mt-4 flex flex-col gap-3">
+          <DashboardPanelCard title="Seção Transversal" className="flex min-h-0 flex-col xl:flex-1" bodyClassName="flex min-h-0 flex-1 flex-col">
+            <div className="flex flex-col gap-3">
               <TransversalSection2DFigure
                 hx={form.hx}
                 hy={form.hy}
@@ -1764,11 +1734,10 @@ export default function PilarSegundaOrdemLocalPage() {
                 showSection={confirmedSections.geometria && confirmedSections.armadura}
               />
             </div>
-          </section>
+          </DashboardPanelCard>
 
-          <section className="rounded-xl border border-border bg-card p-6 xl:flex-1">
-            <h2 className={TYPOGRAPHY.panelTitle}>Esforços</h2>
-            <div className="mt-4 space-y-4">
+          <DashboardPanelCard title="Esforços" className="xl:flex-1">
+            <div className="space-y-4">
               <div className="overflow-x-auto rounded-md border border-input bg-background">
                 <table className="w-full border-collapse text-xs">
                   <thead>
@@ -1826,20 +1795,23 @@ export default function PilarSegundaOrdemLocalPage() {
                 </table>
               </div>
             </div>
-          </section>
+          </DashboardPanelCard>
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-col gap-6 overflow-hidden">
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-6 xl:flex-1">
-            <h2 className={TYPOGRAPHY.panelTitle}>Resultados</h2>
-            <pre className={`mt-4 min-h-0 flex-1 overflow-auto rounded-md border border-input bg-background p-3 ${TYPOGRAPHY.helper}`}>
-              {JSON.stringify(responseData, null, 2) || 'Nenhuma resposta ainda.'}
+          <DashboardPanelCard
+            title="Resultados"
+            tooltipContent="Este bloco mostra os resultados processados do cálculo estrutural, distintos da resposta bruta da API."
+            className="flex min-h-0 flex-col xl:flex-1"
+            bodyClassName="flex min-h-0 flex-1 flex-col"
+          >
+            <pre className={`min-h-0 flex-1 overflow-auto rounded-md border border-input bg-background p-3 ${TYPOGRAPHY.helper}`}>
+              {calculatedResultsPreview}
             </pre>
-          </section>
+          </DashboardPanelCard>
 
-          <section className="rounded-xl border border-border bg-card p-6 xl:flex-1">
-            <h2 className={TYPOGRAPHY.panelTitle}>Diagramas</h2>
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <DashboardPanelCard title="Diagramas" className="xl:flex-1">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <EffortNormalDiagram value={diagramValues.normalDesign} showValues={shouldShowEffortValues} />
               <EffortMomentDiagram
                 title="Msd,x"
@@ -1866,33 +1838,24 @@ export default function PilarSegundaOrdemLocalPage() {
                 showValues={shouldShowEffortValues}
               />
             </div>
-          </section>
+          </DashboardPanelCard>
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-col gap-6 overflow-hidden">
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-6 xl:flex-1">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className={TYPOGRAPHY.panelTitle}>Chamada para API</h2>
+          <ApiRequestResponsePanel
+            endpoint={`POST ${endpoint}`}
+            requestPayload={payload}
+            responseData={responseData}
+            errorMessage={errorMessage}
+            compactControlClassName={TYPOGRAPHY.compactControl}
+            helperClassName={TYPOGRAPHY.helper}
+            errorClassName={TYPOGRAPHY.error}
+            headerAccessory={(
               <Button type="button" disabled className={`h-8 px-3 ${TYPOGRAPHY.compactControl}`}>
                 Método atual: {method === 'curvatura-aproximada' ? 'Curvatura aproximada' : 'Rigidez K aproximada'}
               </Button>
-            </div>
-            <div className="mt-4 flex min-h-0 flex-1 flex-col">
-              <p className={`mt-3 ${TYPOGRAPHY.helper}`}>
-                Endpoint atual: <span className="font-mono text-foreground">{endpoint}</span>
-              </p>
-              <pre className={`mt-4 min-h-0 flex-1 overflow-auto rounded-md border border-input bg-background p-3 ${TYPOGRAPHY.helper}`}>
-                {JSON.stringify(payload, null, 2)}
-              </pre>
-                    <div>
-                      <div className="mt-4 flex items-center gap-3">
-                      </div>
-                    </div>
-              {errorMessage && (
-                <p className={`mt-3 ${TYPOGRAPHY.error}`}>{errorMessage}</p>
-              )}
-            </div>
-          </section>
+            )}
+          />
         </div>
       </div>
     </main>

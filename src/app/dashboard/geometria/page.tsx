@@ -4,17 +4,14 @@ import { ReactNode, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { SidebarProvider } from '@/components/ui/sidebar';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { InputNumber } from '@/components/user/atoms/input-number';
+import { ApiRequestResponsePanel } from '@/components/user/molecules/api-request-response-panel';
+import { DashboardPanelCard } from '@/components/user/molecules/dashboard-panel-card';
+import { useGeometryCalculation } from '@/hooks/features/use-geometry-calculation';
 import { AppSidebar, SidebarToggleButton, type MenuItem } from '../../../components/user/molecules/sidebar';
 import { Section3DViewer } from '../../../components/user/molecules/section-3d-viewer';
-import { HelpCircle, Settings } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import * as styles from '@/styles/fns-styles';
 
 type GeometryOptionKey =
@@ -401,13 +398,21 @@ export default function GeometriaPage() {
   const [params, setParams] = useState<Record<string, string>>(
     buildInitialParams(GEOMETRY_OPTIONS[0])
   );
-  const [isSending, setIsSending] = useState(false);
-  const [responseText, setResponseText] = useState<string>('');
-  const [resultRows, setResultRows] = useState<ResultRow[]>([]);
-  const [requestError, setRequestError] = useState<string>('');
 
   const endpointPath = selectedOption.endpoint;
   const endpointUrl = `http://localhost:3001${endpointPath}`;
+
+  const {
+    isSending,
+    responseText,
+    apiResponseData,
+    resultRows,
+    requestError,
+    submitGeometry,
+    reset,
+  } = useGeometryCalculation<ResultRow>({
+    buildResultRows,
+  });
 
   const payload = useMemo(() => {
     return Object.entries(params).reduce<Record<string, number>>((acc, [key, value]) => {
@@ -417,8 +422,6 @@ export default function GeometriaPage() {
     }, {});
   }, [params]);
 
-  const requestBodyPreview = useMemo(() => JSON.stringify(payload, null, 2), [payload]);
-
   const handleGeometryChange = (value: string) => {
     const option = GEOMETRY_OPTIONS.find((item) => item.key === value);
     if (!option) {
@@ -427,9 +430,7 @@ export default function GeometriaPage() {
 
     setSelectedGeometry(option.key);
     setParams(buildInitialParams(option));
-    setResponseText('');
-    setResultRows([]);
-    setRequestError('');
+    reset();
   };
 
   const handleParamChange = (key: string, value: string) => {
@@ -437,51 +438,7 @@ export default function GeometriaPage() {
   };
 
   const handlePostGeometry = async () => {
-    setIsSending(true);
-    setRequestError('');
-    setResponseText('');
-    setResultRows([]);
-
-    try {
-      const response = await fetch(endpointUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const text = await response.text();
-
-      if (!response.ok) {
-        setRequestError(`Erro ${response.status}: ${text || 'Falha ao processar requisição.'}`);
-        return;
-      }
-
-      if (!text) {
-        setResponseText('Requisição enviada com sucesso (sem corpo na resposta).');
-        return;
-      }
-
-      try {
-        const parsedResponse = JSON.parse(text) as unknown;
-        const rows = buildResultRows(parsedResponse);
-
-        if (rows.length > 0) {
-          setResultRows(rows);
-          setResponseText('');
-          return;
-        }
-      } catch {
-        // fallback para texto puro
-      }
-
-      setResponseText(text);
-    } catch (error) {
-      setRequestError(`Não foi possível conectar em ${endpointUrl}. ${error instanceof Error ? error.message : ''}`.trim());
-    } finally {
-      setIsSending(false);
-    }
+    await submitGeometry(endpointUrl, payload);
   };
 
   return (
@@ -508,12 +465,7 @@ export default function GeometriaPage() {
           <div className="px-3 py-3 lg:px-4 lg:py-4">
             <div className="grid grid-cols-1 gap-3 lg:h-[calc(100vh-12rem)] lg:grid-cols-2">
             <div className="flex h-full flex-col gap-3 lg:overflow-auto">
-              <section className="overflow-hidden rounded-lg border border-border bg-card">
-                <div className="border-b border-border bg-muted/25 px-3 py-2">
-                  <h2 className="text-base font-semibold">Entradas</h2>
-                </div>
-
-                <div className="p-3">
+              <DashboardPanelCard title="Entradas">
                   <div className="mb-2">
                     <div className="space-y-2">
                       <div className="w-full space-y-1">
@@ -594,44 +546,27 @@ export default function GeometriaPage() {
                       {requestError}
                     </p>
                   ) : null}
-                </div>
-              </section>
+              </DashboardPanelCard>
 
-              <section className="mt-auto overflow-hidden rounded-lg border border-border bg-card">
-                <div className="border-b border-border bg-muted/25 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-semibold">Resultados</p>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <HelpCircle className="h-4 w-4 cursor-help text-muted-foreground hover:text-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-xs text-xs">
-                          Cada mini tabela apresenta uma propriedade calculada: primeira coluna é o título da propriedade,
-                          segunda coluna é o valor numérico e terceira coluna é a unidade.
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                </div>
-
-                <div className="p-3">
+              <DashboardPanelCard
+                title="Resultados"
+                tooltipContent="Cada mini tabela apresenta uma propriedade calculada: primeira coluna é o título da propriedade, segunda coluna é o valor numérico e terceira coluna é a unidade."
+                className="mt-auto"
+              >
                   {resultRows.length > 0 ? (
-                    <div className="rounded-md border border-border bg-muted/30 p-2">
-                      <div className="flex flex-wrap gap-2">
-                        {resultRows.map((row, index) => (
-                          <div
-                            key={`${row.title}-${index}`}
-                            className="w-full rounded-md border border-border/70 bg-background/70 sm:w-[calc(50%-0.25rem)] xl:w-[calc(33.333%-0.34rem)]"
-                          >
-                            <div className="grid grid-cols-3 text-xs">
-                              <div className="border-r border-border px-2 py-1.5 text-muted-foreground">{row.title}</div>
-                              <div className="border-r border-border px-2 py-1.5 text-foreground">{row.value}</div>
-                              <div className="px-2 py-1.5 text-muted-foreground">{row.unit}</div>
-                            </div>
+                    <div className="flex flex-wrap gap-2">
+                      {resultRows.map((row, index) => (
+                        <div
+                          key={`${row.title}-${index}`}
+                          className="w-full rounded-md border border-border/70 bg-background/70 sm:w-[calc(50%-0.25rem)] xl:w-[calc(33.333%-0.34rem)]"
+                        >
+                          <div className="grid grid-cols-3 text-xs">
+                            <div className="border-r border-border px-2 py-1.5 text-muted-foreground">{row.title}</div>
+                            <div className="border-r border-border px-2 py-1.5 text-foreground">{row.value}</div>
+                            <div className="px-2 py-1.5 text-muted-foreground">{row.unit}</div>
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      ))}
                     </div>
                   ) : null}
 
@@ -641,42 +576,22 @@ export default function GeometriaPage() {
                       <pre className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{responseText}</pre>
                     </div>
                   ) : null}
-                </div>
-              </section>
+              </DashboardPanelCard>
             </div>
 
             <div className="flex h-full flex-col gap-3 lg:overflow-auto">
-              <section className="overflow-hidden rounded-lg border border-border bg-card">
-                <div className="border-b border-border bg-muted/25 px-3 py-2">
-                  <h2 className="text-base font-semibold">Visualização 3D</h2>
-                </div>
-                <div className="p-3">
+              <DashboardPanelCard title="Visualização 3D">
                   <Section3DViewer sectionType={selectedGeometry} parameters={payload} />
-                </div>
-              </section>
+              </DashboardPanelCard>
 
-              <section className="mt-auto overflow-hidden rounded-lg border border-border bg-card">
-                <div className="border-b border-border bg-muted/25 px-3 py-2">
-                  <div className="flex items-center gap-3 whitespace-nowrap text-sm">
-                    <p className="font-semibold">Como fazer a requisição</p>
-                    <div className="ml-auto flex items-center gap-2 text-right">
-                      <p className="font-medium">Endpoint</p>
-                      <p className="text-muted-foreground">POST {endpointUrl}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3">
-                <div className="space-y-3 text-sm">
-                  <div>
-                    <p className="font-medium">Body atual (JSON)</p>
-                    <pre className="mt-1 overflow-x-auto rounded-md border border-border bg-muted/30 p-2 text-xs">
-{requestBodyPreview}
-                    </pre>
-                  </div>
-                </div>
-                </div>
-              </section>
+              <ApiRequestResponsePanel
+                className="mt-auto"
+                endpoint={`POST ${endpointUrl}`}
+                requestPayload={payload}
+                responseData={apiResponseData}
+                requestLabel="Chamada para API"
+                responseLabel="Resposta da API"
+              />
             </div>
             </div>
           </div>
