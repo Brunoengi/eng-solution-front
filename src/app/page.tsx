@@ -26,6 +26,9 @@ export default function Home() {
                   <Button variant="outline" asChild>
                     <a href="/dashboard/viga-concreto-armado">Explorar Dimensionamento</a>
                   </Button>
+                  <Button variant="outline" asChild>
+                    <a href="/dashboard/normas/nbr6118/tabelas">Tabelas NBR 6118</a>
+                  </Button>
                 </div>
               </div>
 

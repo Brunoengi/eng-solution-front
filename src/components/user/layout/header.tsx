@@ -102,6 +102,9 @@ export function Header() {
                     <a href="/dashboard/pilar-segunda-ordem-local" className="block text-muted-foreground hover:text-foreground">
                       Pilar - Segunda ordem local
                     </a>
+                    <a href="/dashboard/normas/nbr6118/tabelas" className="block text-muted-foreground hover:text-foreground">
+                      Normas NBR
+                    </a>
                   </div>
                 </div>
               </div>
