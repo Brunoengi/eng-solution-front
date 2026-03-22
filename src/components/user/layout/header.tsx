@@ -35,7 +35,7 @@ export function Header() {
 
   return (
     <header className="border-b border-border bg-background">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4">
+      <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between px-4">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold text-foreground">Eng Solution</h1>
         </div>
@@ -102,8 +102,8 @@ export function Header() {
                     <a href="/dashboard/pilar-segunda-ordem-local" className="block text-muted-foreground hover:text-foreground">
                       Pilar - Segunda ordem local
                     </a>
-                    <a href="/dashboard/normas/nbr6118/tabelas" className="block text-muted-foreground hover:text-foreground">
-                      Normas NBR
+                    <a href="/dashboard/normas" className="block text-muted-foreground hover:text-foreground">
+                      Biblioteca de Normas
                     </a>
                   </div>
                 </div>

@@ -3,6 +3,7 @@ import type {
   Nbr6118TableCell,
   Nbr6118TableRepresentation,
 } from '@/types/nbr6118';
+import { useEffect } from 'react';
 
 interface NormativeTableProps {
   representation: Nbr6118TableRepresentation;
@@ -67,6 +68,22 @@ export function NormativeTable({ representation }: NormativeTableProps) {
     (count) => count !== expectedColumnCount,
   );
 
+  useEffect(() => {
+    if (!hasInconsistentGeometry) {
+      return;
+    }
+
+    console.warn(
+      '[NormativeTable] Inconsistent table geometry detected.',
+      {
+        expectedColumnCount,
+        headerColumnCounts,
+        bodyColumnCounts,
+        caption: representation.caption,
+      },
+    );
+  }, [bodyColumnCounts, expectedColumnCount, hasInconsistentGeometry, headerColumnCounts, representation.caption]);
+
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
       {representation.caption || representation.captionFragments?.length ? (
@@ -77,13 +94,6 @@ export function NormativeTable({ representation }: NormativeTableProps) {
               fallbackText={representation.caption}
             />
           </p>
-        </div>
-      ) : null}
-
-      {hasInconsistentGeometry ? (
-        <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          A representacao desta tabela parece ter linhas com quantidades diferentes de colunas. Isso costuma indicar
-          `colSpan` ou estrutura de cabecalho inconsistentes vindos da API.
         </div>
       ) : null}
 

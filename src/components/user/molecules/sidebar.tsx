@@ -21,7 +21,6 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import {
-  Settings,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -47,6 +46,7 @@ interface AppSidebarProps {
   exportGroupLabel?: string;
   centerConfigOnly?: boolean;
   headerClassName?: string;
+  exitHref?: string;
 }
 
 function SidebarToggle() {
@@ -172,7 +172,7 @@ function MenuItemComponent({
   );
 }
 
-export function AppSidebar({ menuItems = [], configItems = [], exportItems = [], menuGroupLabel = 'Menu Principal', configGroupLabel = 'Configurações', exportGroupLabel = 'Exportar', centerConfigOnly = false, headerClassName = '' }: AppSidebarProps) {
+export function AppSidebar({ menuItems = [], configItems = [], exportItems = [], menuGroupLabel = 'Menu Principal', configGroupLabel = 'Configurações', exportGroupLabel = 'Exportar', centerConfigOnly = false, headerClassName = '', exitHref = '/logout' }: AppSidebarProps) {
   const defaultMenuItems: MenuItem[] = menuItems.length > 0 ? menuItems : [];
   const defaultConfigItems: MenuItem[] = configItems.length > 0 ? configItems : [];
   const defaultExportItems: MenuItem[] = exportItems.length > 0 ? exportItems : [];
@@ -256,7 +256,7 @@ export function AppSidebar({ menuItems = [], configItems = [], exportItems = [],
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="rounded-xl border border-transparent transition-all duration-200 hover:border-border/70 hover:bg-accent/80 hover:shadow-sm">
-              <Link href="/logout">
+              <Link href={exitHref}>
                 <LogOut className="mr-2 h-4 w-4" />
                 <span>Sair</span>
               </Link>

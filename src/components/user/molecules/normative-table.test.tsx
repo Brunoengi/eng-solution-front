@@ -1,7 +1,11 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NormativeTable } from '@/components/user/molecules/normative-table';
 import type { Nbr6118TableRepresentation } from '@/types/nbr6118';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('NormativeTable', () => {
   it('renders caption, spans, notes and footnotes from representation', () => {
@@ -97,7 +101,9 @@ describe('NormativeTable', () => {
     expect(subs).toEqual(['d,ser', 'gi,k', '2j', 'qj,k']);
   });
 
-  it('warns when the table geometry is inconsistent', () => {
+  it('logs a warning when the table geometry is inconsistent without showing it in the UI', () => {
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
     const representation: Nbr6118TableRepresentation = {
       kind: 'table',
       headerRows: [
@@ -109,8 +115,16 @@ describe('NormativeTable', () => {
 
     render(<NormativeTable representation={representation} />);
 
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      '[NormativeTable] Inconsistent table geometry detected.',
+      expect.objectContaining({
+        expectedColumnCount: 5,
+        headerColumnCounts: [5, 5],
+        bodyColumnCounts: [6],
+      }),
+    );
     expect(
-      screen.getByText(/representacao desta tabela parece ter linhas com quantidades diferentes de colunas/i),
-    ).toBeInTheDocument();
+      screen.queryByText(/representacao desta tabela parece ter linhas com quantidades diferentes de colunas/i),
+    ).not.toBeInTheDocument();
   });
 });
