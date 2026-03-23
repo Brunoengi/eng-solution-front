@@ -440,7 +440,7 @@ export default function FnsPage() {
     const magnitude = Number(newCarregamentoDistribuido.magnitude);
 
     if (Number.isNaN(magnitude)) {
-      alert('Informe uma magnitude v?lida');
+      alert('Informe uma magnitude válida');
       return;
     }
 
