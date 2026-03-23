@@ -1,6 +1,8 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
+import { useVigaConcretoArmado } from '@/features/viga-concreto-armado/context/viga-concreto-armado-provider';
+import type { Pilar, Viga, CarregamentoPontual, CarregamentoDistribuido, CategoriaCarregamentoDistribuido } from '@/features/viga-concreto-armado/types';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar, SidebarToggleButton, type MenuItem } from '../../../components/user/molecules/sidebar';
 import { Beam3DViewer } from '../../../components/user/molecules/beam-3d-viewer';
@@ -26,38 +28,6 @@ import {
   Home,
 } from 'lucide-react';
 import * as styles from '@/styles/fns-styles';
-
-interface Pilar {
-  id: string;
-  width: number; // largura (cm)
-  position: number; // posição no eixo X (cm)
-}
-
-interface Viga {
-  id: string;
-  width: number; // largura b (cm)
-  height: number; // altura h (cm)
-  startPosition: number; // posição inicial X (cm)
-  endPosition: number; // posição final X (cm)
-  startPillarId?: string; // ID do pilar inicial (undefined se balanço)
-  endPillarId?: string; // ID do pilar final (undefined se balanço)
-}
-
-interface CarregamentoPontual {
-  id: string;
-  position: number; // posição no eixo X (cm)
-  magnitude: number; // força (kN) - negativo = para baixo
-}
-
-interface CarregamentoDistribuido {
-  id: string;
-  startPosition: number; // posição inicial X (cm)
-  endPosition: number; // posição final X (cm)
-  magnitude: number; // carga por unidade de comprimento (kN/m) - negativo = para baixo
-  vigaId?: string; // ID da viga (opcional - se aplicado diretamente em uma viga)
-}
-
-type TipoDiagrama = 'esforcoCortante' | 'momentoFletor';
 
 export default function FnsPage() {
   // Menu items - Seção Principal
@@ -85,26 +55,26 @@ export default function FnsPage() {
   ];
 
   const configItems: MenuItem[] = [
-    { label: 'Configurações', href: '/settings', icon: Settings },
+    { label: 'Critérios de Projeto', href: '/dashboard/viga-concreto-armado/criterios-projeto', icon: Settings },
   ];
 
-  // Estado para pilares e vigas
-  const [pilares, setPilares] = useState<Pilar[]>([
-    { id: 'P1', width: 20, position: -160 },
-    { id: 'P2', width: 20, position: 160 },
-  ]);
-
-  const [vigas, setVigas] = useState<Viga[]>([
-    { 
-      id: 'V1', 
-      width: 20, 
-      height: 40, 
-      startPosition: -160, 
-      endPosition: 160,
-      startPillarId: 'P1',
-      endPillarId: 'P2'
-    },
-  ]);
+  const {
+    pilares,
+    setPilares,
+    vigas,
+    setVigas,
+    carregamentosPontuais,
+    setCarregamentosPontuais,
+    carregamentosDistribuidos,
+    setCarregamentosDistribuidos,
+    resultadoProcessamento,
+    setResultadoProcessamento,
+    mostrarDiagramas,
+    setMostrarDiagramas,
+    diagramaAtivo,
+    setDiagramaAtivo,
+    resetModulo,
+  } = useVigaConcretoArmado();
 
   // Formulário para novo pilar
   const [newPilar, setNewPilar] = useState({ width: 20, position: 0 });
@@ -116,31 +86,34 @@ export default function FnsPage() {
   });
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetCarregamentosOpen, setSheetCarregamentosOpen] = useState(false);
+  const [carregamentoView, setCarregamentoView] = useState<'pontual' | 'distribuido'>('pontual');
 
   // Keys para resetar formulários (force re-render of uncontrolled inputs)
   const [pilarFormKey, setPilarFormKey] = useState(0);
   const [vigaFormKey, setVigaFormKey] = useState(0);
   const [cargaPontualFormKey, setCargaPontualFormKey] = useState(0);
-  const [cargaDistFormKey, setCargaDistFormKey] = useState(0);
 
-  // Estado para carregamentos
-  const [carregamentosPontuais, setCarregamentosPontuais] = useState<CarregamentoPontual[]>([]);
-  const [carregamentosDistribuidos, setCarregamentosDistribuidos] = useState<CarregamentoDistribuido[]>([]);
-  
-  // Formulários para novos carregamentos
   const [newCarregamentoPontual, setNewCarregamentoPontual] = useState({ position: 0, magnitude: -10 });
-  const [newCarregamentoDistribuido, setNewCarregamentoDistribuido] = useState({ 
-    startPosition: 0, 
-    endPosition: 100, 
-    magnitude: -5,
-    tipoDefinicao: 'viga' as 'posicao' | 'viga',
-    vigaId: ''
+  const [newCarregamentoDistribuido, setNewCarregamentoDistribuido] = useState({
+    vigaId: '',
+    categoria: 'g1' as CategoriaCarregamentoDistribuido,
+    magnitude: '-5',
   });
+
   const [isProcessingStructure, setIsProcessingStructure] = useState(false);
   const [processingStructureMessage, setProcessingStructureMessage] = useState<string | null>(null);
-  const [mostrarDiagramas, setMostrarDiagramas] = useState(false);
-  const [diagramaAtivo, setDiagramaAtivo] = useState<TipoDiagrama>('esforcoCortante');
-  const [resultadoProcessamento, setResultadoProcessamento] = useState<unknown | null>(null);
+
+  const categoriasCarregamentoDistribuido: CategoriaCarregamentoDistribuido[] = ['g1', 'g2', 'q'];
+
+  const resumoCarregamentosDistribuidosPorViga = vigas.map((viga) => ({
+    viga,
+    valores: categoriasCarregamentoDistribuido.reduce((acc, categoria) => {
+      acc[categoria] = carregamentosDistribuidos
+        .filter((carga) => carga.vigaId === viga.id && carga.categoria === categoria)
+        .reduce((total, carga) => total + carga.magnitude, 0);
+      return acc;
+    }, { g1: 0, g2: 0, q: 0 } as Record<CategoriaCarregamentoDistribuido, number>),
+  }));
 
   // Função para verificar se há balanço bloqueando posição
   const getPilaresComBalanco = () => {
@@ -352,10 +325,7 @@ export default function FnsPage() {
   // Função para resetar toda a estrutura
   const resetAll = () => {
     if (window.confirm('Tem certeza que deseja remover tudo? Esta ação não pode ser desfeita.')) {
-      setPilares([]);
-      setVigas([]);
-      setCarregamentosPontuais([]);
-      setCarregamentosDistribuidos([]);
+      resetModulo();
     }
   };
 
@@ -456,81 +426,57 @@ export default function FnsPage() {
 
   // Funções para gerenciar carregamentos distribuídos
   const addCarregamentoDistribuido = () => {
-    let startPos = newCarregamentoDistribuido.startPosition;
-    let endPos = newCarregamentoDistribuido.endPosition;
-    let vigaId: string | undefined = undefined;
-    
-    // Se definido por viga, usar posições da viga
-    if (newCarregamentoDistribuido.tipoDefinicao === 'viga') {
-      const viga = vigas.find(v => v.id === newCarregamentoDistribuido.vigaId);
-      if (!viga) {
-        alert('Selecione uma viga válida');
-        return;
-      }
-      startPos = viga.startPosition;
-      endPos = viga.endPosition;
-      vigaId = viga.id;
-    } else {
-      // Validar se as posições estão dentro da estrutura
-      const allPositions = [...pilares.map(p => p.position), ...vigas.flatMap(v => [v.startPosition, v.endPosition])];
-      const minPos = Math.min(...allPositions);
-      const maxPos = Math.max(...allPositions);
-      
-      if (startPos < minPos || startPos > maxPos || endPos < minPos || endPos > maxPos) {
-        alert(`As posições do carregamento devem estar entre ${minPos} cm e ${maxPos} cm`);
-        return;
-      }
-      
-      if (startPos >= endPos) {
-        alert('A posição inicial deve ser menor que a posição final');
-        return;
-      }
-    }
-    
-    const newId = `CD${carregamentosDistribuidos.length + 1}`;
-    const newCarregamento: CarregamentoDistribuido = {
-      id: newId,
-      startPosition: startPos,
-      endPosition: endPos,
-      magnitude: newCarregamentoDistribuido.magnitude,
-      vigaId: vigaId,
-    };
-    
-    setCarregamentosDistribuidos([...carregamentosDistribuidos, newCarregamento]);
-    setNewCarregamentoDistribuido({ 
-      startPosition: 0, 
-      endPosition: 100, 
-      magnitude: -5,
-      tipoDefinicao: 'viga',
-      vigaId: ''
-    });
-    setCargaDistFormKey(prev => prev + 1); // Reset form
-  };
+    const viga = vigas.find((item) => item.id === newCarregamentoDistribuido.vigaId);
 
-  const removeCarregamentoDistribuido = (id: string) => {
-    setCarregamentosDistribuidos(carregamentosDistribuidos.filter(c => c.id !== id));
-  };
-
-  const aplicarCarregamentoDistribuidoEmTodasVigas = () => {
-    if (vigas.length === 0) {
-      alert('Adicione vigas antes de aplicar carregamentos distribuídos.');
+    if (!viga) {
+      alert('Selecione uma viga válida');
       return;
     }
 
-    const novosCarregamentos = vigas.map((viga, index) => {
-      const magnitudeAleatoria = Number((10 + Math.random() * 5).toFixed(2));
+    const cargaExistente = carregamentosDistribuidos.find((carga) =>
+      carga.vigaId === viga.id && carga.categoria === newCarregamentoDistribuido.categoria
+    );
 
-      return {
-        id: `CD${index + 1}`,
-        startPosition: viga.startPosition,
-        endPosition: viga.endPosition,
-        magnitude: -magnitudeAleatoria,
-        vigaId: viga.id,
-      } as CarregamentoDistribuido;
+    const magnitude = Number(newCarregamentoDistribuido.magnitude);
+
+    if (Number.isNaN(magnitude)) {
+      alert('Informe uma magnitude v?lida');
+      return;
+    }
+
+    if (magnitude === 0) {
+      setCarregamentosDistribuidos(
+        carregamentosDistribuidos.filter((carga) =>
+          !(carga.vigaId === viga.id && carga.categoria === newCarregamentoDistribuido.categoria)
+        )
+      );
+      return;
+    }
+
+    const newCarregamento: CarregamentoDistribuido = {
+      id: cargaExistente?.id ?? `CD${carregamentosDistribuidos.length + 1}` ,
+      startPosition: viga.startPosition,
+      endPosition: viga.endPosition,
+      magnitude,
+      vigaId: viga.id,
+      categoria: newCarregamentoDistribuido.categoria,
+    };
+
+    if (cargaExistente) {
+      setCarregamentosDistribuidos(
+        carregamentosDistribuidos.map((carga) =>
+          carga.id === cargaExistente.id ? newCarregamento : carga
+        )
+      );
+    } else {
+      setCarregamentosDistribuidos([...carregamentosDistribuidos, newCarregamento]);
+    }
+
+    setNewCarregamentoDistribuido({
+      vigaId: '',
+      categoria: 'g1',
+      magnitude: '-5',
     });
-
-    setCarregamentosDistribuidos(novosCarregamentos);
-    setCargaDistFormKey(prev => prev + 1);
   };
 
   const processarEstrutura = async () => {
@@ -700,7 +646,7 @@ export default function FnsPage() {
   useEffect(() => {
     setResultadoProcessamento(null);
     setMostrarDiagramas(false);
-  }, [pilares, vigas, carregamentosPontuais, carregamentosDistribuidos]);
+  }, [carregamentosDistribuidos, carregamentosPontuais, pilares, setMostrarDiagramas, setResultadoProcessamento, vigas]);
 
   return (
     <SidebarProvider defaultOpen={false}>
@@ -993,193 +939,143 @@ export default function FnsPage() {
                               Adicione, edite ou remova carregamentos aplicados na estrutura
                             </SheetDescription>
                           </SheetHeader>
-                          
+
                           <div className="mt-6 space-y-6">
-                            {/* Seção Carregamentos Pontuais */}
-                            <div>
-                              <h4 className="text-sm font-semibold mb-3">Carregamentos Pontuais</h4>
-                              <div className="space-y-2 mb-4">
-                                {carregamentosPontuais.map((carga) => (
-                                  <div key={carga.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                                    <div>
-                                      <p className="text-sm font-medium">{carga.id}</p>
-                                      <p className="text-xs text-muted-foreground">
-                                        Posição: {carga.position} cm | Magnitude: {carga.magnitude} kN
-                                      </p>
-                                    </div>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => removeCarregamentoPontual(carga.id)}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                ))}
-                              </div>
-                              
-                              <div key={cargaPontualFormKey} className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                                <h5 className="text-xs font-semibold">Adicionar Carregamento Pontual</h5>
-                                <div className="space-y-2">
-                                  <div>
-                                    <Label htmlFor="carga-pontual-position" className="text-xs">Posição X (cm)</Label>
-                                    <Input
-                                      id="carga-pontual-position"
-                                      type="number"
-                                      step="any"
-                                      defaultValue={newCarregamentoPontual.position}
-                                      onChange={(e) => {
-                                        const val = e.target.valueAsNumber;
-                                        if (!isNaN(val)) {
-                                          setNewCarregamentoPontual({
-                                            ...newCarregamentoPontual,
-                                            position: val
-                                          });
-                                        }
-                                      }}
-                                      className="h-8"
-                                    />
-                                  </div>
-                                  <div>
-                                    <Label htmlFor="carga-pontual-magnitude" className="text-xs">
-                                      Magnitude (kN) - Negativo = ↓
-                                    </Label>
-                                    <Input
-                                      id="carga-pontual-magnitude"
-                                      type="number"
-                                      step="any"
-                                      defaultValue={newCarregamentoPontual.magnitude}
-                                      onChange={(e) => {
-                                        const val = e.target.valueAsNumber;
-                                        if (!isNaN(val)) {
-                                          setNewCarregamentoPontual({
-                                            ...newCarregamentoPontual,
-                                            magnitude: val
-                                          });
-                                        }
-                                      }}
-                                      className="h-8"
-                                    />
-                                  </div>
-                                </div>
-                                <Button onClick={addCarregamentoPontual} size="sm" className="w-full">
-                                  <Plus className="h-4 w-4 mr-2" />
-                                  Adicionar Carregamento Pontual
-                                </Button>
-                              </div>
+                            <div className="inline-flex w-fit rounded-md border border-border bg-muted/50 p-1">
+                              <Button
+                                type="button"
+                                variant={carregamentoView === 'pontual' ? 'default' : 'ghost'}
+                                className="h-7 px-3 text-xs"
+                                onClick={() => setCarregamentoView('pontual')}
+                              >
+                                Carregamento Pontual
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={carregamentoView === 'distribuido' ? 'default' : 'ghost'}
+                                className="h-7 px-3 text-xs"
+                                onClick={() => setCarregamentoView('distribuido')}
+                              >
+                                Carregamento Distribuído
+                              </Button>
                             </div>
 
-                            {/* Seção Carregamentos Distribuídos */}
-                            <div>
-                              <h4 className="text-sm font-semibold mb-3">Carregamentos Distribuídos</h4>
-                              <Button
-                                onClick={aplicarCarregamentoDistribuidoEmTodasVigas}
-                                size="sm"
-                                variant="secondary"
-                                className="w-full mb-3"
-                              >
-                                Aplicar em todas as vigas (10 a 15 kN/m)
-                              </Button>
-                              <div className="space-y-2 mb-4">
-                                {carregamentosDistribuidos.map((carga) => (
-                                  <div key={carga.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                            {carregamentoView === 'pontual' ? (
+                              <div>
+                                <div key={cargaPontualFormKey} className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                                  <h5 className="text-sm font-semibold text-slate-900">Adicionar Carregamento Pontual (kN)</h5>
+                                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                                     <div>
-                                      <p className="text-sm font-medium">
-                                        {carga.id} {carga.vigaId && `(${carga.vigaId})`}
-                                      </p>
-                                      <p className="text-xs text-muted-foreground">
-                                        De {carga.startPosition} cm até {carga.endPosition} cm | {carga.magnitude} kN/m
-                                      </p>
+                                      <Label htmlFor="carga-pontual-position" className="text-xs">Posição X (cm)</Label>
+                                      <Input
+                                        id="carga-pontual-position"
+                                        type="number"
+                                        step="any"
+                                        defaultValue={newCarregamentoPontual.position}
+                                        onChange={(e) => {
+                                          const val = e.target.valueAsNumber;
+                                          if (!isNaN(val)) {
+                                            setNewCarregamentoPontual({
+                                              ...newCarregamentoPontual,
+                                              position: val
+                                            });
+                                          }
+                                        }}
+                                        className="h-8"
+                                      />
                                     </div>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => removeCarregamentoDistribuido(carga.id)}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
+                                    <div>
+                                      <Label htmlFor="carga-pontual-magnitude" className="text-xs">Magnitude</Label>
+                                      <Input
+                                        id="carga-pontual-magnitude"
+                                        type="number"
+                                        step="any"
+                                        defaultValue={newCarregamentoPontual.magnitude}
+                                        onChange={(e) => {
+                                          const val = e.target.valueAsNumber;
+                                          if (!isNaN(val)) {
+                                            setNewCarregamentoPontual({
+                                              ...newCarregamentoPontual,
+                                              magnitude: val
+                                            });
+                                          }
+                                        }}
+                                        className="h-8"
+                                      />
+                                    </div>
                                   </div>
-                                ))}
-                              </div>
-                              
-                              <div key={cargaDistFormKey} className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                                <h5 className="text-xs font-semibold">Adicionar Carregamento Distribuído</h5>
-                                <div className="space-y-2">
-                                  <div>
-                                    <Label htmlFor="carga-dist-tipo" className="text-xs">Definir por</Label>
-                                    <Select
-                                      value={newCarregamentoDistribuido.tipoDefinicao}
-                                      onValueChange={(value: 'posicao' | 'viga') => 
-                                        setNewCarregamentoDistribuido({
-                                          ...newCarregamentoDistribuido,
-                                          tipoDefinicao: value
-                                        })
-                                      }
-                                    >
-                                      <SelectTrigger className="h-8">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="posicao">Posição (X inicial e final)</SelectItem>
-                                        <SelectItem value="viga">Viga específica</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
+                                  <Button onClick={addCarregamentoPontual} size="sm" className="w-full">
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Adicionar Carregamento Pontual
+                                  </Button>
+                                </div>
 
-                                  {newCarregamentoDistribuido.tipoDefinicao === 'posicao' ? (
-                                    <>
+                                <div className="mt-4 space-y-2">
+                                  {carregamentosPontuais.map((carga) => (
+                                    <div key={carga.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                                       <div>
-                                        <Label htmlFor="carga-dist-start" className="text-xs">Posição Inicial X (cm)</Label>
-                                        <Input
-                                          id="carga-dist-start"
-                                          type="number"
-                                          step="any"
-                                          defaultValue={newCarregamentoDistribuido.startPosition}
-                                          onChange={(e) => {
-                                            const val = e.target.valueAsNumber;
-                                            if (!isNaN(val)) {
-                                              setNewCarregamentoDistribuido({
-                                                ...newCarregamentoDistribuido,
-                                                startPosition: val
-                                              });
-                                            }
-                                          }}
-                                          className="h-8"
-                                        />
+                                        <p className="text-sm font-medium">{carga.id}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                          Posição: {carga.position} cm | Magnitude: {carga.magnitude} kN
+                                        </p>
                                       </div>
-                                      <div>
-                                        <Label htmlFor="carga-dist-end" className="text-xs">Posição Final X (cm)</Label>
-                                        <Input
-                                          id="carga-dist-end"
-                                          type="number"
-                                          step="any"
-                                          defaultValue={newCarregamentoDistribuido.endPosition}
-                                          onChange={(e) => {
-                                            const val = e.target.valueAsNumber;
-                                            if (!isNaN(val)) {
-                                              setNewCarregamentoDistribuido({
-                                                ...newCarregamentoDistribuido,
-                                                endPosition: val
-                                              });
-                                            }
-                                          }}
-                                          className="h-8"
-                                        />
-                                      </div>
-                                    </>
-                                  ) : (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => removeCarregamentoPontual(carga.id)}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="space-y-4">
+                                <div className="overflow-hidden rounded-lg border border-border">
+                                  <table className="w-full text-sm">
+                                    <thead className="bg-muted/50">
+                                      <tr className="border-b border-border">
+                                        <th className="px-3 py-2 text-left font-semibold">Nome</th>
+                                        <th className="px-3 py-2 text-left font-semibold">g1</th>
+                                        <th className="px-3 py-2 text-left font-semibold">g2</th>
+                                        <th className="px-3 py-2 text-left font-semibold">q</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {resumoCarregamentosDistribuidosPorViga.map(({ viga, valores }) => (
+                                        <tr key={viga.id} className="border-b border-border last:border-b-0">
+                                          <td className="px-3 py-2 font-medium">{viga.id}</td>
+                                          <td className="px-3 py-2 text-muted-foreground">
+                                            {valores.g1 !== 0 ? valores.g1 : '-'}
+                                          </td>
+                                          <td className="px-3 py-2 text-muted-foreground">
+                                            {valores.g2 !== 0 ? valores.g2 : '-'}
+                                          </td>
+                                          <td className="px-3 py-2 text-muted-foreground">
+                                            {valores.q !== 0 ? valores.q : '-'}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                                  <h5 className="text-sm font-semibold text-slate-900">Adicionar Carregamento Distribuído</h5>
+                                  <div className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
                                     <div>
                                       <Label htmlFor="carga-dist-viga" className="text-xs">Selecionar Viga</Label>
                                       <Select
                                         value={newCarregamentoDistribuido.vigaId}
-                                        onValueChange={(value) => 
+                                        onValueChange={(value) =>
                                           setNewCarregamentoDistribuido({
                                             ...newCarregamentoDistribuido,
-                                            vigaId: value
+                                            vigaId: value,
                                           })
                                         }
                                       >
-                                        <SelectTrigger className="h-8">
+                                        <SelectTrigger className="h-8 w-full">
                                           <SelectValue placeholder="Selecione uma viga" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -1191,36 +1087,53 @@ export default function FnsPage() {
                                         </SelectContent>
                                       </Select>
                                     </div>
-                                  )}
 
-                                  <div>
-                                    <Label htmlFor="carga-dist-magnitude" className="text-xs">
-                                      Magnitude (kN/m) - Negativo = ↓
-                                    </Label>
-                                    <Input
-                                      id="carga-dist-magnitude"
-                                      type="number"
-                                      step="any"
-                                      defaultValue={newCarregamentoDistribuido.magnitude}
-                                      onChange={(e) => {
-                                        const val = e.target.valueAsNumber;
-                                        if (!isNaN(val)) {
+                                    <div>
+                                      <Label htmlFor="carga-dist-categoria" className="text-xs">Carregamento</Label>
+                                      <Select
+                                        value={newCarregamentoDistribuido.categoria}
+                                        onValueChange={(value: CategoriaCarregamentoDistribuido) =>
                                           setNewCarregamentoDistribuido({
                                             ...newCarregamentoDistribuido,
-                                            magnitude: val
-                                          });
+                                            categoria: value,
+                                          })
                                         }
-                                      }}
-                                      className="h-8"
-                                    />
+                                      >
+                                        <SelectTrigger className="h-8 w-full">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="g1">g1</SelectItem>
+                                          <SelectItem value="g2">g2</SelectItem>
+                                          <SelectItem value="q">q</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+
+                                    <div>
+                                      <Label htmlFor="carga-dist-magnitude" className="text-xs">Magnitude</Label>
+                                      <Input
+                                        id="carga-dist-magnitude"
+                                        type="number"
+                                        step="any"
+                                        value={newCarregamentoDistribuido.magnitude}
+                                        onChange={(e) => {
+                                          setNewCarregamentoDistribuido({
+                                            ...newCarregamentoDistribuido,
+                                            magnitude: e.target.value,
+                                          });
+                                        }}
+                                        className="h-8"
+                                      />
+                                    </div>
                                   </div>
+                                  <Button onClick={addCarregamentoDistribuido} size="sm" className="w-full">
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Salvar Carregamento Distribuído
+                                  </Button>
                                 </div>
-                                <Button onClick={addCarregamentoDistribuido} size="sm" className="w-full">
-                                  <Plus className="h-4 w-4 mr-2" />
-                                  Adicionar Carregamento Distribuído
-                                </Button>
                               </div>
-                            </div>
+                            )}
                           </div>
                         </SheetContent>
                       </Sheet>
@@ -1273,3 +1186,5 @@ export default function FnsPage() {
     </SidebarProvider>
   );
 }
+
+

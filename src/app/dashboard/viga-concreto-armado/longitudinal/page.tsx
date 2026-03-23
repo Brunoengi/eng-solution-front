@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useVigaConcretoArmado } from '@/features/viga-concreto-armado/context/viga-concreto-armado-provider';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import {
   Tooltip,
@@ -27,10 +28,12 @@ import {
 import * as styles from '@/styles/fns-styles';
 
 export default function LongitudinalPage() {
+  const { criteriosProjeto, updateCriteriosProjeto, vigas } = useVigaConcretoArmado();
+  const firstBeam = vigas[0];
   // Estados
   const [geometry, setGeometry] = useState<Record<string, number | string>>({
-    b: 20,
-    h: 40,
+    b: firstBeam?.width ?? 20,
+    h: firstBeam?.height ?? 40,
     d_prime: 4,
   });
 
@@ -44,9 +47,9 @@ export default function LongitudinalPage() {
   });
 
   const [coefficients, setCoefficients] = useState<Record<string, number | string>>({
-    gammac: 1.4,
-    gammas: 1.15,
-    gammaf: 1.4,
+    gammac: criteriosProjeto.gammaC,
+    gammas: criteriosProjeto.gammaS,
+    gammaf: criteriosProjeto.gammaF,
   });
 
   // Menu items - Seção Principal
@@ -74,7 +77,7 @@ export default function LongitudinalPage() {
   ];
 
   const configItems: MenuItem[] = [
-    { label: 'Configurações', href: '/settings', icon: Settings },
+    { label: 'Critérios de Projeto', href: '/dashboard/viga-concreto-armado/criterios-projeto', icon: Settings },
   ];
 
   // Dados de entrada - Geometria
@@ -140,7 +143,6 @@ export default function LongitudinalPage() {
     { id: 'gammas', label: <>γ<sub>s</sub></>, value: coefficients.gammas, step: 0.01, inputWidth: 'w-20', labelWidth: 'w-10' },
     { id: 'gammaf', label: <>γ<sub>f</sub></>, value: coefficients.gammaf, step: 0.01, inputWidth: 'w-20', labelWidth: 'w-10' },
   ];
-
   const handleGeometryChange = (id: string, value: number | string) => {
     setGeometry((prev) => ({ ...prev, [id]: value }));
   };
@@ -155,6 +157,24 @@ export default function LongitudinalPage() {
 
   const handleCoefficientChange = (id: string, value: number | string) => {
     setCoefficients((prev) => ({ ...prev, [id]: value }));
+
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+      return;
+    }
+
+    if (id === 'gammac') {
+      updateCriteriosProjeto({ gammaC: value });
+      return;
+    }
+
+    if (id === 'gammas') {
+      updateCriteriosProjeto({ gammaS: value });
+      return;
+    }
+
+    if (id === 'gammaf') {
+      updateCriteriosProjeto({ gammaF: value });
+    }
   };
 
   return (
@@ -308,7 +328,7 @@ export default function LongitudinalPage() {
                               <br />
                               h = {geometry.h} cm
                               <br />
-                              d' = {geometry.d_prime} cm
+                              d&apos; = {geometry.d_prime} cm
                             </p>
                           </div>
                           <div className={styles.summaryCardStyles.container}>
