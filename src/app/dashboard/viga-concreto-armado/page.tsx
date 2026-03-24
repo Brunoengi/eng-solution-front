@@ -1,8 +1,8 @@
 ﻿'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useVigaConcretoArmado } from '@/features/viga-concreto-armado/context/viga-concreto-armado-provider';
-import type { Pilar, Viga, CarregamentoPontual, CarregamentoDistribuido, CategoriaCarregamentoDistribuido } from '@/features/viga-concreto-armado/types';
+import { DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA, type CarregamentoDistribuido, type CarregamentoPontual, type CategoriaCarregamentoDistribuido, type Pilar, type ResultadosProcessamentoViga, type SelecaoDiagramaViga, type TipoDiagrama, type TipoModeloApoioIntermediario, type Viga } from '@/features/viga-concreto-armado/types';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar, SidebarToggleButton, type MenuItem } from '../../../components/user/molecules/sidebar';
 import { Beam3DViewer } from '../../../components/user/molecules/beam-3d-viewer';
@@ -28,6 +28,98 @@ import {
   Home,
 } from 'lucide-react';
 import * as styles from '@/styles/fns-styles';
+
+type OpcaoDiagrama = {
+  value: SelecaoDiagramaViga;
+  label: string;
+};
+
+type ClassificacaoApoios = {
+  apoiosValidosOrdenados: number[];
+  apoioExtremoEsquerdo: number | null;
+  apoioExtremoDireito: number | null;
+  apoiosIntermediarios: number[];
+  estruturaEhVigaContinua: boolean;
+};
+
+const OPCOES_DIAGRAMA_CONTINUO: OpcaoDiagrama[] = [
+  { value: 'cortante-segundo-genero', label: 'Cortante - Apoios de segundo gênero' },
+  { value: 'momento-segundo-genero', label: 'Momento - Apoios de segundo gênero' },
+  { value: 'cortante-engastado', label: 'Cortante - Apoios engastados' },
+  { value: 'momento-engastado', label: 'Momento - Apoios engastados' },
+];
+
+const OPCOES_DIAGRAMA_SIMPLES: OpcaoDiagrama[] = [
+  { value: 'cortante-segundo-genero', label: 'Cortante' },
+  { value: 'momento-segundo-genero', label: 'Momento' },
+];
+
+function getTipoDiagramaFromSelecao(selecao: SelecaoDiagramaViga): TipoDiagrama {
+  return selecao.startsWith('momento') ? 'momentoFletor' : 'esforcoCortante';
+}
+
+function getModeloFromSelecao(selecao: SelecaoDiagramaViga): TipoModeloApoioIntermediario {
+  return selecao.endsWith('engastado') ? 'engastado' : 'segundoGenero';
+}
+
+function getSelecaoSemEngaste(selecao: SelecaoDiagramaViga): SelecaoDiagramaViga {
+  return selecao.startsWith('momento') ? 'momento-segundo-genero' : 'cortante-segundo-genero';
+}
+
+function getTituloDiagrama(selecao: SelecaoDiagramaViga, estruturaEhVigaContinua: boolean): string {
+  const prefixo = getTipoDiagramaFromSelecao(selecao) === 'esforcoCortante'
+    ? 'V(x) - Esforço Cortante'
+    : 'M(x) - Momento Fletor';
+
+  if (!estruturaEhVigaContinua) {
+    return `Diagrama ativo: ${prefixo}`;
+  }
+
+  const sufixo = getModeloFromSelecao(selecao) === 'engastado'
+    ? 'Apoios engastados'
+    : 'Apoios de segundo gênero';
+
+  return `Diagrama ativo: ${prefixo} - ${sufixo}`;
+}
+
+function classificarApoiosDaEstrutura(pilares: Pilar[], vigas: Viga[]): ClassificacaoApoios {
+  const extremidadesVigas = vigas.flatMap((viga) => [viga.startPosition, viga.endPosition]);
+
+  if (extremidadesVigas.length === 0) {
+    return {
+      apoiosValidosOrdenados: [],
+      apoioExtremoEsquerdo: null,
+      apoioExtremoDireito: null,
+      apoiosIntermediarios: [],
+      estruturaEhVigaContinua: false,
+    };
+  }
+
+  const extremidadesSet = new Set(extremidadesVigas);
+  const apoiosValidosOrdenados = Array.from(
+    new Set(
+      pilares
+        .map((pilar) => pilar.position)
+        .filter((position) => extremidadesSet.has(position))
+    )
+  ).sort((a, b) => a - b);
+
+  const extremidadeEsquerda = Math.min(...extremidadesVigas);
+  const extremidadeDireita = Math.max(...extremidadesVigas);
+  const apoioExtremoEsquerdo = apoiosValidosOrdenados.includes(extremidadeEsquerda) ? extremidadeEsquerda : null;
+  const apoioExtremoDireito = apoiosValidosOrdenados.includes(extremidadeDireita) ? extremidadeDireita : null;
+  const apoiosIntermediarios = apoiosValidosOrdenados.filter(
+    (position) => position > extremidadeEsquerda && position < extremidadeDireita
+  );
+
+  return {
+    apoiosValidosOrdenados,
+    apoioExtremoEsquerdo,
+    apoioExtremoDireito,
+    apoiosIntermediarios,
+    estruturaEhVigaContinua: apoiosValidosOrdenados.length >= 3 && apoiosIntermediarios.length > 0,
+  };
+}
 
 export default function FnsPage() {
   // Menu items - Seção Principal
@@ -67,12 +159,13 @@ export default function FnsPage() {
     setCarregamentosPontuais,
     carregamentosDistribuidos,
     setCarregamentosDistribuidos,
-    resultadoProcessamento,
-    setResultadoProcessamento,
+    resultadosProcessamento,
+    setResultadosProcessamento,
     mostrarDiagramas,
+    resetProcessamentoVisualizacao,
     setMostrarDiagramas,
-    diagramaAtivo,
-    setDiagramaAtivo,
+    selecaoDiagrama,
+    setSelecaoDiagrama,
     resetModulo,
   } = useVigaConcretoArmado();
 
@@ -114,6 +207,44 @@ export default function FnsPage() {
       return acc;
     }, { g1: 0, g2: 0, q: 0 } as Record<CategoriaCarregamentoDistribuido, number>),
   }));
+
+  const carregamentosDistribuidosVisualizacao = useMemo<CarregamentoDistribuido[]>(
+    () =>
+      vigas.flatMap((viga) => {
+        const magnitude = carregamentosDistribuidos
+          .filter((carga) => carga.vigaId === viga.id)
+          .reduce((total, carga) => total + carga.magnitude, 0);
+
+        if (magnitude === 0) {
+          return [];
+        }
+
+        return [{
+          id: `visualizacao-${viga.id}`,
+          startPosition: viga.startPosition,
+          endPosition: viga.endPosition,
+          magnitude,
+          vigaId: viga.id,
+          categoria: 'q',
+        }];
+      }),
+    [carregamentosDistribuidos, vigas]
+  );
+
+  const classificacaoApoios = useMemo(
+    () => classificarApoiosDaEstrutura(pilares, vigas),
+    [pilares, vigas]
+  );
+  const estruturaEhVigaContinua = classificacaoApoios.estruturaEhVigaContinua;
+  const opcoesDiagrama = estruturaEhVigaContinua ? OPCOES_DIAGRAMA_CONTINUO : OPCOES_DIAGRAMA_SIMPLES;
+  const selecaoDiagramaEfetiva = estruturaEhVigaContinua
+    ? selecaoDiagrama
+    : getSelecaoSemEngaste(selecaoDiagrama);
+  const diagramaAtivo = getTipoDiagramaFromSelecao(selecaoDiagramaEfetiva);
+  const modeloDiagramaAtivo = getModeloFromSelecao(selecaoDiagramaEfetiva);
+  const resultadoProcessamentoAtivo = estruturaEhVigaContinua
+    ? resultadosProcessamento[modeloDiagramaAtivo]
+    : resultadosProcessamento.segundoGenero;
 
   // Função para verificar se há balanço bloqueando posição
   const getPilaresComBalanco = () => {
@@ -482,90 +613,97 @@ export default function FnsPage() {
   const processarEstrutura = async () => {
     setIsProcessingStructure(true);
     setProcessingStructureMessage(null);
-    setResultadoProcessamento(null);
+    setResultadosProcessamento(DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA);
 
     const apiBaseUrl = process.env.NEXT_PUBLIC_ESTRUTURA_API_URL ?? 'http://localhost:3001';
     const apiPath = process.env.NEXT_PUBLIC_ESTRUTURA_API_PATH ?? '/beam2d/system';
-
     const eModulo = Number(process.env.NEXT_PUBLIC_BEAM_E ?? 210_000);
-
     const nodePositions = Array.from(
       new Set(vigas.flatMap((viga) => [viga.startPosition, viga.endPosition]))
     ).sort((a, b) => a - b);
 
-    const hasPilarAtPosition = new Set(pilares.map((pilar) => pilar.position));
-    const firstSupportPosition = nodePositions.find((position) => hasPilarAtPosition.has(position));
+    const supportPositions = classificacaoApoios.apoiosValidosOrdenados;
+    const supportPositionSet = new Set(supportPositions);
+    const intermediateSupportSet = new Set(classificacaoApoios.apoiosIntermediarios);
+    const firstSupportPosition = supportPositions[0];
 
-    const nodeDataByPosition = new Map<number, {
+    const buildNodeDataByPosition = (modelo: TipoModeloApoioIntermediario) => {
+      const nodeDataByPosition = new Map<number, {
+        label: string;
+        acoes: { fx?: number; fy?: number; mz?: number };
+        deslocamentos: { ux?: number; uy?: number; rz?: number };
+      }>();
+
+      nodePositions.forEach((position, index) => {
+        const fy = carregamentosPontuais
+          .filter((carga) => carga.position === position)
+          .reduce((acc, carga) => acc + normalizePointLoadFyForApi(carga.magnitude), 0);
+
+        const deslocamentos: { ux?: number; uy?: number; rz?: number } = {};
+        if (supportPositionSet.has(position)) {
+          deslocamentos.uy = 0;
+        }
+        if (position === firstSupportPosition) {
+          deslocamentos.ux = 0;
+        }
+        if (modelo === 'engastado' && intermediateSupportSet.has(position)) {
+          deslocamentos.rz = 0;
+        }
+
+        nodeDataByPosition.set(position, {
+          label: 'N' + (index + 1),
+          acoes: { fx: 0, fy, mz: 0 },
+          deslocamentos,
+        });
+      });
+
+      return nodeDataByPosition;
+    };
+
+    const buildElementosPayload = (nodeDataByPosition: Map<number, {
       label: string;
       acoes: { fx?: number; fy?: number; mz?: number };
       deslocamentos: { ux?: number; uy?: number; rz?: number };
-    }>();
+    }>) => {
+      return vigas
+        .filter((viga) => viga.startPosition !== viga.endPosition)
+        .map((viga) => {
+          const b = viga.width;
+          const h = viga.height;
 
-    nodePositions.forEach((position, index) => {
-      const fy = carregamentosPontuais
-        .filter((carga) => carga.position === position)
-        .reduce((acc, carga) => acc + normalizePointLoadFyForApi(carga.magnitude), 0);
+          const cargasDistribuidasDaViga = carregamentosDistribuidos.filter((carga) =>
+            carga.vigaId === viga.id
+            || (
+              carga.startPosition >= Math.min(viga.startPosition, viga.endPosition)
+              && carga.endPosition <= Math.max(viga.startPosition, viga.endPosition)
+            )
+          );
 
-      const deslocamentos: { ux?: number; uy?: number; rz?: number } = {};
-      if (hasPilarAtPosition.has(position)) {
-        deslocamentos.uy = 0;
-      }
-      if (position === firstSupportPosition) {
-        deslocamentos.ux = 0;
-      }
+          const q = cargasDistribuidasDaViga.reduce((acc, carga) => acc + normalizeDistributedLoadQForApi(carga.magnitude), 0);
 
-      nodeDataByPosition.set(position, {
-        label: `N${index + 1}`,
-        acoes: { fx: 0, fy, mz: 0 },
-        deslocamentos,
-      });
-    });
-
-    const elementosPayload = vigas
-      .filter((viga) => viga.startPosition !== viga.endPosition)
-      .map((viga) => {
-        const b = viga.width;
-        const h = viga.height;
-
-        const cargasDistribuidasDaViga = carregamentosDistribuidos.filter((carga) =>
-          carga.vigaId === viga.id
-          || (
-            carga.startPosition >= Math.min(viga.startPosition, viga.endPosition)
-            && carga.endPosition <= Math.max(viga.startPosition, viga.endPosition)
-          )
-        );
-
-        const q = cargasDistribuidasDaViga.reduce((acc, carga) => acc + normalizeDistributedLoadQForApi(carga.magnitude), 0);
-
-        return {
-          label: viga.id,
-          E: eModulo,
-          A: b * h,
-          I: (b * Math.pow(h, 3)) / 12,
-          q,
-          no_i: {
-            y: 0,
-            x: viga.startPosition,
-            label: nodeDataByPosition.get(viga.startPosition)?.label ?? 'Ni',
-            acoes: nodeDataByPosition.get(viga.startPosition)?.acoes ?? {},
-            deslocamentos: nodeDataByPosition.get(viga.startPosition)?.deslocamentos ?? {},
-          },
-          no_j: {
-            y: 0,
-            x: viga.endPosition,
-            label: nodeDataByPosition.get(viga.endPosition)?.label ?? 'Nj',
-            acoes: nodeDataByPosition.get(viga.endPosition)?.acoes ?? {},
-            deslocamentos: nodeDataByPosition.get(viga.endPosition)?.deslocamentos ?? {},
-          },
-        };
-      });
-
-    if (elementosPayload.length === 0) {
-      setProcessingStructureMessage('Nenhuma viga válida para processar (comprimento zero).');
-      setIsProcessingStructure(false);
-      return;
-    }
+          return {
+            label: viga.id,
+            E: eModulo,
+            A: b * h,
+            I: (b * Math.pow(h, 3)) / 12,
+            q,
+            no_i: {
+              y: 0,
+              x: viga.startPosition,
+              label: nodeDataByPosition.get(viga.startPosition)?.label ?? 'Ni',
+              acoes: nodeDataByPosition.get(viga.startPosition)?.acoes ?? {},
+              deslocamentos: nodeDataByPosition.get(viga.startPosition)?.deslocamentos ?? {},
+            },
+            no_j: {
+              y: 0,
+              x: viga.endPosition,
+              label: nodeDataByPosition.get(viga.endPosition)?.label ?? 'Nj',
+              acoes: nodeDataByPosition.get(viga.endPosition)?.acoes ?? {},
+              deslocamentos: nodeDataByPosition.get(viga.endPosition)?.deslocamentos ?? {},
+            },
+          };
+        });
+    };
 
     const diagramas = {
       esforcoCortante: true,
@@ -574,22 +712,14 @@ export default function FnsPage() {
       rotacao: false,
     };
 
-    try {
-      console.log('Payload /beam2d/system:', {
-        elementos: elementosPayload,
-        diagramas,
-        sistemaDeUnidades: {
-          distancia: 'cm',
-          forca: 'kN',
-          area: 'cm²',
-          momentoDeInercia: 'cm^4',
-          moduloElasticidade: 'MPa',
-          cargaDistribuida: 'kN/m',
-          momento: 'kN*m',
-        },
-      });
+    const processarModelo = async (modelo: TipoModeloApoioIntermediario) => {
+      const elementosPayload = buildElementosPayload(buildNodeDataByPosition(modelo));
 
-      const response = await fetch(`${apiBaseUrl}${apiPath}`, {
+      if (elementosPayload.length === 0) {
+        throw new Error('Nenhuma viga válida para processar (comprimento zero).');
+      }
+
+      const response = await fetch(apiBaseUrl + apiPath, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -618,18 +748,40 @@ export default function FnsPage() {
         responseData = responseText;
       }
 
-      console.log('Resposta /beam2d/system:', responseData);
-
       if (!response.ok) {
         const errorDetails = typeof responseData === 'string'
           ? responseData
           : JSON.stringify(responseData);
 
-        throw new Error(`Falha ao processar estrutura (HTTP ${response.status}): ${errorDetails}`);
+        throw new Error('Falha ao processar estrutura (' + modelo + ') (HTTP ' + response.status + '): ' + errorDetails);
       }
 
-      setResultadoProcessamento(responseData);
-      setProcessingStructureMessage('Estrutura processada com sucesso.');
+      return responseData;
+    };
+
+    const modelosParaProcessar: TipoModeloApoioIntermediario[] = estruturaEhVigaContinua
+      ? ['segundoGenero', 'engastado']
+      : ['segundoGenero'];
+
+    try {
+      const resultados = await Promise.all(
+        modelosParaProcessar.map(async (modelo) => [modelo, await processarModelo(modelo)] as const)
+      );
+
+      const proximosResultados: ResultadosProcessamentoViga = {
+        ...DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA,
+      };
+
+      resultados.forEach(([modelo, resultado]) => {
+        proximosResultados[modelo] = resultado;
+      });
+
+      setResultadosProcessamento(proximosResultados);
+      setProcessingStructureMessage(
+        estruturaEhVigaContinua
+          ? 'Estrutura processada com sucesso para os modelos com apoios de segundo gênero e apoios intermediários engastados.'
+          : 'Estrutura processada com sucesso.'
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro desconhecido ao processar estrutura.';
       setProcessingStructureMessage(message);
@@ -640,13 +792,21 @@ export default function FnsPage() {
 
   const exibirDiagramas = mostrarDiagramas;
   const tituloVisualizacao = exibirDiagramas
-    ? `Diagrama ativo: ${diagramaAtivo === 'esforcoCortante' ? 'V(x) - Esforço Cortante' : 'M(x) - Momento Fletor'}`
+    ? getTituloDiagrama(selecaoDiagramaEfetiva, estruturaEhVigaContinua)
     : 'Visualização da Viga';
 
   useEffect(() => {
-    setResultadoProcessamento(null);
-    setMostrarDiagramas(false);
-  }, [carregamentosDistribuidos, carregamentosPontuais, pilares, setMostrarDiagramas, setResultadoProcessamento, vigas]);
+    if (!estruturaEhVigaContinua) {
+      const selecaoCompativel = getSelecaoSemEngaste(selecaoDiagrama);
+      if (selecaoCompativel !== selecaoDiagrama) {
+        setSelecaoDiagrama(selecaoCompativel);
+      }
+    }
+  }, [estruturaEhVigaContinua, selecaoDiagrama, setSelecaoDiagrama]);
+
+  useEffect(() => {
+    resetProcessamentoVisualizacao();
+  }, [carregamentosDistribuidos, carregamentosPontuais, pilares, resetProcessamentoVisualizacao, vigas]);
 
   return (
     <SidebarProvider defaultOpen={false}>
@@ -682,14 +842,21 @@ export default function FnsPage() {
                     {mostrarDiagramas ? 'Mostrar cargas' : 'Mostrar diagramas'}
                   </Button>
                   {mostrarDiagramas && (
-                    <Button
-                      variant="outline"
-                      onClick={() => setDiagramaAtivo((prev) => (
-                        prev === 'esforcoCortante' ? 'momentoFletor' : 'esforcoCortante'
-                      ))}
+                    <Select
+                      value={selecaoDiagramaEfetiva}
+                      onValueChange={(value) => setSelecaoDiagrama(value as SelecaoDiagramaViga)}
                     >
-                      Alternar diagrama: {diagramaAtivo === 'esforcoCortante' ? 'Cortante' : 'Momento'}
-                    </Button>
+                      <SelectTrigger className="w-[320px]">
+                        <SelectValue placeholder="Selecione o diagrama" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {opcoesDiagrama.map((opcao) => (
+                          <SelectItem key={opcao.value} value={opcao.value}>
+                            {opcao.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   )}
                 </div>
               </div>
@@ -1146,10 +1313,10 @@ export default function FnsPage() {
                           pilares={pilares} 
                           vigas={vigas} 
                           carregamentosPontuais={exibirDiagramas ? [] : carregamentosPontuais}
-                          carregamentosDistribuidos={exibirDiagramas ? [] : carregamentosDistribuidos}
+                          carregamentosDistribuidos={exibirDiagramas ? [] : carregamentosDistribuidosVisualizacao}
                           exibirDiagramas={exibirDiagramas}
                           diagramaAtivo={diagramaAtivo}
-                          resultadoProcessamento={resultadoProcessamento}
+                          resultadoProcessamento={resultadoProcessamentoAtivo}
                         />
                       </div>
                     </TabsContent>
@@ -1160,10 +1327,10 @@ export default function FnsPage() {
                           pilares={pilares} 
                           vigas={vigas}
                           carregamentosPontuais={exibirDiagramas ? [] : carregamentosPontuais}
-                          carregamentosDistribuidos={exibirDiagramas ? [] : carregamentosDistribuidos}
+                          carregamentosDistribuidos={exibirDiagramas ? [] : carregamentosDistribuidosVisualizacao}
                           exibirDiagramas={exibirDiagramas}
                           diagramaAtivo={diagramaAtivo}
-                          resultadoProcessamento={resultadoProcessamento}
+                          resultadoProcessamento={resultadoProcessamentoAtivo}
                         />
                       </div>
                     </TabsContent>
@@ -1186,5 +1353,7 @@ export default function FnsPage() {
     </SidebarProvider>
   );
 }
+
+
 
 

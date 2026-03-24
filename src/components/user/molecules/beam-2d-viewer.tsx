@@ -512,11 +512,6 @@ export function Beam2DViewer({
     });
   };
 
-  useEffect(() => {
-    if (!exibirDiagramas) {
-      setDiagramHover(null);
-    }
-  }, [exibirDiagramas, diagramaAtivo, resultadoProcessamento]);
 
   return (
     <div ref={containerRef} className={`w-full ${className}`}>
@@ -547,7 +542,6 @@ export function Beam2DViewer({
         {vigas.map((viga) => {
           const vigaStartX = worldToSVG(viga.startPosition);
           const vigaEndX = worldToSVG(viga.endPosition);
-          const vigaLength = Math.abs(vigaEndX - vigaStartX);
           const vigaCenterX = (vigaStartX + vigaEndX) / 2;
           
           return (
@@ -609,7 +603,7 @@ export function Beam2DViewer({
         })}
 
         {/* Dimensões e Anotações - cotas de todas as vigas */}
-        {vigas.map((viga, index) => {
+        {vigas.map((viga) => {
           const vigaStartX = worldToSVG(viga.startPosition);
           const vigaEndX = worldToSVG(viga.endPosition);
           const vigaCenterX = (vigaStartX + vigaEndX) / 2;
@@ -812,24 +806,9 @@ export function Beam2DViewer({
             return isAboveBeam ? pointY - preferredGap : pointY + preferredGap;
           };
 
-          const getNearestPointByX = (targetX: number) => {
-            return points.reduce((nearest, current) => (
-              Math.abs(current.x - targetX) < Math.abs(nearest.x - targetX) ? current : nearest
-            ));
-          };
-
           const nodePositions = Array.from(
             new Set(vigas.flatMap((viga) => [viga.startPosition, viga.endPosition]))
           ).sort((a, b) => a - b);
-
-          const nodeAnnotations = nodePositions.map((nodeX) => {
-            const point = getNearestPointByX(nodeX);
-            return {
-              x: nodeX,
-              valor: point.valor,
-              y: toDiagramY(point.valor),
-            };
-          });
 
           const maxPoint = points.reduce((best, current) => (
             (current.valor * valueSignFactor) > (best.valor * valueSignFactor) ? current : best
@@ -838,9 +817,82 @@ export function Beam2DViewer({
             (current.valor * valueSignFactor) < (best.valor * valueSignFactor) ? current : best
           ), points[0]);
           const tolerance = 1e-6;
+          const samePoint = (a: PontoDiagrama, b: PontoDiagrama) => (
+            Math.abs(a.x - b.x) < tolerance && Math.abs(a.valor - b.valor) < tolerance
+          );
+          const getClosestPointToNode = (nodeX: number, side: 'left' | 'right') => {
+            const candidatePoints = points.filter((point) => (
+              side === 'left'
+                ? point.x <= nodeX + tolerance
+                : point.x >= nodeX - tolerance
+            ));
+
+            if (candidatePoints.length === 0) {
+              return null;
+            }
+
+            return candidatePoints.reduce((nearest, current) => (
+              Math.abs(current.x - nodeX) < Math.abs(nearest.x - nodeX) ? current : nearest
+            ));
+          };
+          const nodeAnnotations = nodePositions.flatMap((nodeX, index) => {
+            const exactPoints = points.filter((point) => Math.abs(point.x - nodeX) < tolerance);
+            const candidatePoints = exactPoints.length > 0
+              ? exactPoints
+              : [
+                  getClosestPointToNode(nodeX, 'left'),
+                  getClosestPointToNode(nodeX, 'right'),
+                ].filter((point): point is PontoDiagrama => point !== null);
+
+            const uniquePoints = candidatePoints.filter((point, pointIndex, allPoints) => (
+              allPoints.findIndex((candidate) => Math.abs(candidate.valor - point.valor) < tolerance) === pointIndex
+            ));
+
+            return uniquePoints.map((point, pointIndex) => ({
+              key: `node-annotation-${index}-${pointIndex}`,
+              x: nodeX,
+              valor: point.valor,
+              y: toDiagramY(point.valor),
+            }));
+          });
           const isPointOnNode = (point: PontoDiagrama) => nodeAnnotations.some(
             (node) => Math.abs(node.x - point.x) < tolerance && Math.abs(node.valor - point.valor) < tolerance
           );
+          const localPositiveMaxPoints = diagramaAtivo === 'momentoFletor'
+            ? vigas
+                .flatMap((viga) => {
+                  const vigaMin = Math.min(viga.startPosition, viga.endPosition);
+                  const vigaMax = Math.max(viga.startPosition, viga.endPosition);
+                  const spanPoints = points.filter(
+                    (point) => point.x >= vigaMin - tolerance && point.x <= vigaMax + tolerance
+                  );
+
+                  if (spanPoints.length === 0) {
+                    return [];
+                  }
+
+                  const maxPositivePoint = spanPoints.reduce<PontoDiagrama | null>((best, current) => {
+                    if (current.valor <= 0) {
+                      return best;
+                    }
+
+                    if (!best || current.valor > best.valor) {
+                      return current;
+                    }
+
+                    return best;
+                  }, null);
+
+                  if (!maxPositivePoint || isPointOnNode(maxPositivePoint) || samePoint(maxPositivePoint, maxPoint)) {
+                    return [];
+                  }
+
+                  return [maxPositivePoint];
+                })
+                .filter((point, index, allPoints) => (
+                  allPoints.findIndex((candidate) => samePoint(candidate, point)) === index
+                ))
+            : [];
 
           const polylinePoints = points
             .map((point) => `${worldToSVG(point.x)},${toDiagramY(point.valor)}`)
@@ -865,8 +917,8 @@ export function Beam2DViewer({
                 strokeWidth="2.5"
               />
 
-              {nodeAnnotations.map((node, index) => (
-                <g key={`node-annotation-${index}`}>
+              {nodeAnnotations.map((node) => (
+                <g key={node.key}>
                   <circle
                     cx={worldToSVG(node.x)}
                     cy={node.y}
@@ -927,6 +979,27 @@ export function Beam2DViewer({
                   </text>
                 </g>
               )}
+
+              {localPositiveMaxPoints.map((point, index) => (
+                <g key={`local-positive-max-${index}`}>
+                  <circle
+                    cx={worldToSVG(point.x)}
+                    cy={toDiagramY(point.valor)}
+                    r="3.5"
+                    fill="#16a34a"
+                  />
+                  <text
+                    x={worldToSVG(point.x)}
+                    y={getLabelY(toDiagramY(point.valor), 14)}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fill="#16a34a"
+                    fontWeight="700"
+                  >
+                    {formatValue(point.valor)} {unit}
+                  </text>
+                </g>
+              ))}
 
             </g>
           );

@@ -812,12 +812,6 @@ export function Beam3DViewer({
         };
         const unit = diagramaAtivo === 'esforcoCortante' ? 'kN' : 'kN*m';
 
-        const getNearestPointByX = (targetX: number) => {
-          return points.reduce((nearest, current) => (
-            Math.abs(current.x - targetX) < Math.abs(nearest.x - targetX) ? current : nearest
-          ));
-        };
-
         const displayFactor = diagramaAtivo === 'momentoFletor' ? getMomentoDisplayFactor(resultadoProcessamento) : 1;
         const formatValue = (valor: number) => `${(valor * displayFactor * valueSignFactor).toFixed(2)}`;
 
@@ -865,28 +859,60 @@ export function Beam3DViewer({
         const nodePositions = Array.from(
           new Set(vigas.flatMap((viga) => [viga.startPosition, viga.endPosition]))
         ).sort((a, b) => a - b);
-        const nodePoints = nodePositions.map((nodeX) => ({
-          x: nodeX,
-          valor: getNearestPointByX(nodeX).valor,
-        }));
         const tolerance = 1e-6;
+        const samePoint = (a: PontoDiagrama, b: PontoDiagrama) => (
+          Math.abs(a.x - b.x) < tolerance && Math.abs(a.valor - b.valor) < tolerance
+        );
+        const getClosestPointToNode = (nodeX: number, side: 'left' | 'right') => {
+          const candidatePoints = points.filter((point) => (
+            side === 'left'
+              ? point.x <= nodeX + tolerance
+              : point.x >= nodeX - tolerance
+          ));
+
+          if (candidatePoints.length === 0) {
+            return null;
+          }
+
+          return candidatePoints.reduce((nearest, current) => (
+            Math.abs(current.x - nodeX) < Math.abs(nearest.x - nodeX) ? current : nearest
+          ));
+        };
+        const nodePoints = nodePositions.flatMap((nodeX) => {
+          const exactPoints = points.filter((point) => Math.abs(point.x - nodeX) < tolerance);
+          const candidatePoints = exactPoints.length > 0
+            ? exactPoints
+            : [
+                getClosestPointToNode(nodeX, 'left'),
+                getClosestPointToNode(nodeX, 'right'),
+              ].filter((point): point is PontoDiagrama => point !== null);
+
+          return candidatePoints
+            .filter((point, index, allPoints) => (
+              allPoints.findIndex((candidate) => Math.abs(candidate.valor - point.valor) < tolerance) === index
+            ))
+            .map((point, index) => ({
+              key: `node-point-${nodeX}-${index}`,
+              x: nodeX,
+              valor: point.valor,
+            }));
+        });
         const isPointOnNode = (point: PontoDiagrama) => nodePoints.some(
           (node) => Math.abs(node.x - point.x) < tolerance && Math.abs(node.valor - point.valor) < tolerance
         );
 
-        nodePositions.forEach((nodeX) => {
-          const point = getNearestPointByX(nodeX);
+        nodePoints.forEach((point) => {
           const y = toDiagramY(point.valor);
 
           const markerGeometry = new THREE.SphereGeometry(maxHeight * 0.05, 10, 10);
           const markerMaterial = new THREE.MeshStandardMaterial({ color: diagramaConfig.cor });
           const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-          marker.position.set(nodeX, y, zOffset);
+          marker.position.set(point.x, y, zOffset);
           scene.add(marker);
 
           const nodeLabel = createTextSprite(`${formatValue(point.valor)} ${unit}`, `#${diagramaConfig.cor.toString(16).padStart(6, '0')}`, 38);
           if (nodeLabel) {
-            nodeLabel.position.set(nodeX, getLabelY(y, maxHeight * 0.16), zOffset);
+            nodeLabel.position.set(point.x, getLabelY(y, maxHeight * 0.16), zOffset);
             nodeLabel.renderOrder = 999;
             scene.add(nodeLabel);
           }
@@ -898,6 +924,41 @@ export function Beam3DViewer({
         const minPoint = points.reduce((best, current) => (
           (current.valor * valueSignFactor) < (best.valor * valueSignFactor) ? current : best
         ), points[0]);
+        const localPositiveMaxPoints = diagramaAtivo === 'momentoFletor'
+          ? vigas
+              .flatMap((viga) => {
+                const vigaMin = Math.min(viga.startPosition, viga.endPosition);
+                const vigaMax = Math.max(viga.startPosition, viga.endPosition);
+                const spanPoints = points.filter(
+                  (point) => point.x >= vigaMin - tolerance && point.x <= vigaMax + tolerance
+                );
+
+                if (spanPoints.length === 0) {
+                  return [];
+                }
+
+                const maxPositivePoint = spanPoints.reduce<PontoDiagrama | null>((best, current) => {
+                  if (current.valor <= 0) {
+                    return best;
+                  }
+
+                  if (!best || current.valor > best.valor) {
+                    return current;
+                  }
+
+                  return best;
+                }, null);
+
+                if (!maxPositivePoint || isPointOnNode(maxPositivePoint) || samePoint(maxPositivePoint, maxPoint)) {
+                  return [];
+                }
+
+                return [maxPositivePoint];
+              })
+              .filter((point, index, allPoints) => (
+                allPoints.findIndex((candidate) => samePoint(candidate, point)) === index
+              ))
+          : [];
 
         if (!isPointOnNode(maxPoint)) {
           const maxMarker = new THREE.Mesh(
@@ -930,6 +991,22 @@ export function Beam3DViewer({
             scene.add(minLabel);
           }
         }
+
+        localPositiveMaxPoints.forEach((point) => {
+          const localMaxMarker = new THREE.Mesh(
+            new THREE.SphereGeometry(maxHeight * 0.05, 10, 10),
+            new THREE.MeshStandardMaterial({ color: 0x16a34a })
+          );
+          localMaxMarker.position.set(point.x, toDiagramY(point.valor), zOffset);
+          scene.add(localMaxMarker);
+
+          const localMaxLabel = createTextSprite(`${formatValue(point.valor)} ${unit}`, '#16a34a', 34);
+          if (localMaxLabel) {
+            localMaxLabel.position.set(point.x, getLabelY(toDiagramY(point.valor), maxHeight * 0.18), zOffset);
+            localMaxLabel.renderOrder = 999;
+            scene.add(localMaxLabel);
+          }
+        });
       }
 
     }
@@ -976,7 +1053,7 @@ export function Beam3DViewer({
         if (object.userData.type === 'beam') {
           setTooltip({
             visible: true,
-            text: `${object.userData.id} - b: ${object.userData.width} cm, h: ${object.userData.height} cm, distância útil: ${object.userData.length} cm`,
+            text: `${object.userData.id} - b: ${object.userData.width} cm, h: ${object.userData.height} cm, vão teórico: ${object.userData.length} cm`,
             x: event.clientX - rect.left,
             y: event.clientY - rect.top
           });

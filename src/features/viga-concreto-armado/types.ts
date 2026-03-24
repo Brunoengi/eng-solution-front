@@ -32,6 +32,18 @@ export interface CarregamentoDistribuido {
 }
 
 export type TipoDiagrama = 'esforcoCortante' | 'momentoFletor';
+export type TipoModeloApoioIntermediario = 'segundoGenero' | 'engastado';
+export type SelecaoDiagramaViga =
+  | 'cortante-segundo-genero'
+  | 'momento-segundo-genero'
+  | 'cortante-engastado'
+  | 'momento-engastado';
+
+export interface ResultadosProcessamentoViga {
+  segundoGenero: unknown | null;
+  engastado: unknown | null;
+}
+
 export type ClasseAgressividadeAmbiental = 'I' | 'II' | 'III' | 'IV';
 export type ClasseConcreto = 'C20' | 'C25' | 'C30' | 'C35' | 'C40' | 'C45' | 'C50' | 'C55' | 'C60' | 'C65' | 'C70' | 'C75' | 'C80' | 'C85' | 'C90';
 export type TipoVergalhao = 'CA-50';
@@ -58,9 +70,9 @@ export interface VigaConcretoArmadoState {
   vigas: Viga[];
   carregamentosPontuais: CarregamentoPontual[];
   carregamentosDistribuidos: CarregamentoDistribuido[];
-  resultadoProcessamento: unknown | null;
+  resultadosProcessamento: ResultadosProcessamentoViga;
   mostrarDiagramas: boolean;
-  diagramaAtivo: TipoDiagrama;
+  selecaoDiagrama: SelecaoDiagramaViga;
 }
 
 export const COBRIMENTO_NOMINAL_VIGA_POR_CAA: Record<ClasseAgressividadeAmbiental, number> = {
@@ -101,13 +113,18 @@ export const DEFAULT_VIGAS: Viga[] = [
   },
 ];
 
+export const DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA: ResultadosProcessamentoViga = {
+  segundoGenero: null,
+  engastado: null,
+};
+
 export const DEFAULT_VIGA_CONCRETO_ARMADO_STATE: VigaConcretoArmadoState = {
   criteriosProjeto: DEFAULT_CRITERIOS_PROJETO_VIGA,
   pilares: DEFAULT_PILARES_VIGA,
   vigas: DEFAULT_VIGAS,
   carregamentosPontuais: [],
   carregamentosDistribuidos: [],
-  resultadoProcessamento: null,
+  resultadosProcessamento: DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA,
   mostrarDiagramas: false,
-  diagramaAtivo: 'esforcoCortante',
+  selecaoDiagrama: 'cortante-segundo-genero',
 };

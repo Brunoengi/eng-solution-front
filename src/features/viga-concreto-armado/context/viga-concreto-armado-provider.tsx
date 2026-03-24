@@ -1,16 +1,18 @@
-'use client';
+﻿'use client';
 
 import { createContext, useContext, useMemo, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import {
   DEFAULT_CRITERIOS_PROJETO_VIGA,
   DEFAULT_PILARES_VIGA,
+  DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA,
   DEFAULT_VIGA_CONCRETO_ARMADO_STATE,
   DEFAULT_VIGAS,
   type CarregamentoDistribuido,
   type CarregamentoPontual,
   type CriteriosProjetoViga,
   type Pilar,
-  type TipoDiagrama,
+  type ResultadosProcessamentoViga,
+  type SelecaoDiagramaViga,
   type Viga,
   type VigaConcretoArmadoState,
 } from '../types';
@@ -20,6 +22,11 @@ const listeners = new Set<() => void>();
 let cachedSerializedState: string | null = null;
 let cachedSnapshot: VigaConcretoArmadoState = DEFAULT_VIGA_CONCRETO_ARMADO_STATE;
 
+type LegacyStoredState = Partial<VigaConcretoArmadoState> & {
+  resultadoProcessamento?: unknown | null;
+  diagramaAtivo?: 'esforcoCortante' | 'momentoFletor';
+};
+
 interface VigaConcretoArmadoContextValue extends VigaConcretoArmadoState {
   setCriteriosProjeto: Dispatch<SetStateAction<CriteriosProjetoViga>>;
   updateCriteriosProjeto: (patch: Partial<CriteriosProjetoViga>) => void;
@@ -27,9 +34,10 @@ interface VigaConcretoArmadoContextValue extends VigaConcretoArmadoState {
   setVigas: Dispatch<SetStateAction<Viga[]>>;
   setCarregamentosPontuais: Dispatch<SetStateAction<CarregamentoPontual[]>>;
   setCarregamentosDistribuidos: Dispatch<SetStateAction<CarregamentoDistribuido[]>>;
-  setResultadoProcessamento: Dispatch<SetStateAction<unknown | null>>;
+  setResultadosProcessamento: Dispatch<SetStateAction<ResultadosProcessamentoViga>>;
   setMostrarDiagramas: Dispatch<SetStateAction<boolean>>;
-  setDiagramaAtivo: Dispatch<SetStateAction<TipoDiagrama>>;
+  setSelecaoDiagrama: Dispatch<SetStateAction<SelecaoDiagramaViga>>;
+  resetProcessamentoVisualizacao: () => void;
   resetModulo: () => void;
 }
 
@@ -64,7 +72,7 @@ function subscribe(listener: () => void) {
 }
 
 function parseStoredState(serialized: string): VigaConcretoArmadoState {
-  const parsed = JSON.parse(serialized) as Partial<VigaConcretoArmadoState>;
+  const parsed = JSON.parse(serialized) as LegacyStoredState;
   const vigas = parsed.vigas ?? DEFAULT_VIGAS;
   const carregamentosDistribuidos = (parsed.carregamentosDistribuidos ?? []).map((carga) => {
     const vigaId = carga.vigaId ?? vigas.find((viga) =>
@@ -79,6 +87,16 @@ function parseStoredState(serialized: string): VigaConcretoArmadoState {
     };
   });
 
+  const resultadosProcessamento = {
+    ...DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA,
+    ...(parsed.resultadosProcessamento ?? {}),
+    segundoGenero: parsed.resultadosProcessamento?.segundoGenero ?? parsed.resultadoProcessamento ?? null,
+    engastado: parsed.resultadosProcessamento?.engastado ?? null,
+  };
+
+  const selecaoDiagrama = parsed.selecaoDiagrama
+    ?? (parsed.diagramaAtivo === 'momentoFletor' ? 'momento-segundo-genero' : 'cortante-segundo-genero');
+
   return {
     ...DEFAULT_VIGA_CONCRETO_ARMADO_STATE,
     ...parsed,
@@ -90,9 +108,9 @@ function parseStoredState(serialized: string): VigaConcretoArmadoState {
     vigas,
     carregamentosPontuais: parsed.carregamentosPontuais ?? [],
     carregamentosDistribuidos,
-    resultadoProcessamento: parsed.resultadoProcessamento ?? null,
+    resultadosProcessamento,
     mostrarDiagramas: parsed.mostrarDiagramas ?? false,
-    diagramaAtivo: parsed.diagramaAtivo ?? 'esforcoCortante',
+    selecaoDiagrama,
   };
 }
 
@@ -154,72 +172,103 @@ function resolveSetStateAction<T>(value: SetStateAction<T>, previous: T): T {
     : value;
 }
 
+function updateState(updater: (currentState: VigaConcretoArmadoState) => VigaConcretoArmadoState) {
+  const currentState = cachedSerializedState === null
+    ? getSnapshot()
+    : cachedSnapshot;
+
+  writeState(updater(currentState));
+}
+
 export function VigaConcretoArmadoProvider({ children }: { children: ReactNode }) {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
-  const value = useMemo<VigaConcretoArmadoContextValue>(() => ({
-    ...snapshot,
+  const actions = useMemo<Pick<VigaConcretoArmadoContextValue,
+    | 'setCriteriosProjeto'
+    | 'updateCriteriosProjeto'
+    | 'setPilares'
+    | 'setVigas'
+    | 'setCarregamentosPontuais'
+    | 'setCarregamentosDistribuidos'
+    | 'setResultadosProcessamento'
+    | 'setMostrarDiagramas'
+    | 'setSelecaoDiagrama'
+    | 'resetProcessamentoVisualizacao'
+    | 'resetModulo'
+  >>(() => ({
     setCriteriosProjeto: (value) => {
-      writeState({
-        ...snapshot,
-        criteriosProjeto: resolveSetStateAction(value, snapshot.criteriosProjeto),
-      });
+      updateState((currentState) => ({
+        ...currentState,
+        criteriosProjeto: resolveSetStateAction(value, currentState.criteriosProjeto),
+      }));
     },
     updateCriteriosProjeto: (patch) => {
-      writeState({
-        ...snapshot,
+      updateState((currentState) => ({
+        ...currentState,
         criteriosProjeto: {
-          ...snapshot.criteriosProjeto,
+          ...currentState.criteriosProjeto,
           ...patch,
         },
-      });
+      }));
     },
     setPilares: (value) => {
-      writeState({
-        ...snapshot,
-        pilares: resolveSetStateAction(value, snapshot.pilares),
-      });
+      updateState((currentState) => ({
+        ...currentState,
+        pilares: resolveSetStateAction(value, currentState.pilares),
+      }));
     },
     setVigas: (value) => {
-      writeState({
-        ...snapshot,
-        vigas: resolveSetStateAction(value, snapshot.vigas),
-      });
+      updateState((currentState) => ({
+        ...currentState,
+        vigas: resolveSetStateAction(value, currentState.vigas),
+      }));
     },
     setCarregamentosPontuais: (value) => {
-      writeState({
-        ...snapshot,
-        carregamentosPontuais: resolveSetStateAction(value, snapshot.carregamentosPontuais),
-      });
+      updateState((currentState) => ({
+        ...currentState,
+        carregamentosPontuais: resolveSetStateAction(value, currentState.carregamentosPontuais),
+      }));
     },
     setCarregamentosDistribuidos: (value) => {
-      writeState({
-        ...snapshot,
-        carregamentosDistribuidos: resolveSetStateAction(value, snapshot.carregamentosDistribuidos),
-      });
+      updateState((currentState) => ({
+        ...currentState,
+        carregamentosDistribuidos: resolveSetStateAction(value, currentState.carregamentosDistribuidos),
+      }));
     },
-    setResultadoProcessamento: (value) => {
-      writeState({
-        ...snapshot,
-        resultadoProcessamento: resolveSetStateAction(value, snapshot.resultadoProcessamento),
-      });
+    setResultadosProcessamento: (value) => {
+      updateState((currentState) => ({
+        ...currentState,
+        resultadosProcessamento: resolveSetStateAction(value, currentState.resultadosProcessamento),
+      }));
     },
     setMostrarDiagramas: (value) => {
-      writeState({
-        ...snapshot,
-        mostrarDiagramas: resolveSetStateAction(value, snapshot.mostrarDiagramas),
-      });
+      updateState((currentState) => ({
+        ...currentState,
+        mostrarDiagramas: resolveSetStateAction(value, currentState.mostrarDiagramas),
+      }));
     },
-    setDiagramaAtivo: (value) => {
-      writeState({
-        ...snapshot,
-        diagramaAtivo: resolveSetStateAction(value, snapshot.diagramaAtivo),
-      });
+    setSelecaoDiagrama: (value) => {
+      updateState((currentState) => ({
+        ...currentState,
+        selecaoDiagrama: resolveSetStateAction(value, currentState.selecaoDiagrama),
+      }));
+    },
+    resetProcessamentoVisualizacao: () => {
+      updateState((currentState) => ({
+        ...currentState,
+        resultadosProcessamento: DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA,
+        mostrarDiagramas: false,
+      }));
     },
     resetModulo: () => {
       writeState(DEFAULT_VIGA_CONCRETO_ARMADO_STATE);
     },
-  }), [snapshot]);
+  }), []);
+
+  const value = useMemo<VigaConcretoArmadoContextValue>(() => ({
+    ...snapshot,
+    ...actions,
+  }), [actions, snapshot]);
 
   return (
     <VigaConcretoArmadoContext.Provider value={value}>

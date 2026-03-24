@@ -11,7 +11,7 @@ export default function EsforcosSolicitantesPage() {
     vigas,
     carregamentosPontuais,
     carregamentosDistribuidos,
-    resultadoProcessamento,
+    resultadosProcessamento,
     criteriosProjeto,
   } = useVigaConcretoArmado();
 
@@ -42,6 +42,10 @@ export default function EsforcosSolicitantesPage() {
   const configItems: MenuItem[] = [
     { label: 'Critérios de Projeto', href: '/dashboard/viga-concreto-armado/criterios-projeto', icon: Settings },
   ];
+
+  const possuiResultados = Boolean(
+    resultadosProcessamento.segundoGenero || resultadosProcessamento.engastado
+  );
 
   return (
     <SidebarProvider defaultOpen={false}>
@@ -98,11 +102,22 @@ export default function EsforcosSolicitantesPage() {
               </article>
 
               <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-slate-900">Resultado estrutural compartilhado</h2>
-                {resultadoProcessamento ? (
-                  <pre className="mt-4 max-h-[28rem] overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100">
-                    {JSON.stringify(resultadoProcessamento, null, 2)}
-                  </pre>
+                <h2 className="text-lg font-semibold text-slate-900">Resultados estruturais compartilhados</h2>
+                {possuiResultados ? (
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700">Modelo com apoios de segundo gênero</p>
+                      <pre className="mt-2 max-h-[14rem] overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100">
+                        {JSON.stringify(resultadosProcessamento.segundoGenero, null, 2)}
+                      </pre>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700">Modelo com apoios intermediários engastados</p>
+                      <pre className="mt-2 max-h-[14rem] overflow-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-100">
+                        {JSON.stringify(resultadosProcessamento.engastado, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
                 ) : (
                   <p className="mt-4 text-sm text-slate-600">
                     Nenhum resultado processado ainda. Execute o processamento em
