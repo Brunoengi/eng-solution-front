@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Button } from '@/components/ui/button';
+import type { EnvelopeSection, EnvelopeDiagramPoint, EnvelopeDiagramView } from '@/features/viga-concreto-armado/types';
 import { 
   RotateCcw, 
   ZoomIn, 
@@ -48,6 +49,15 @@ interface PontoDiagrama {
   valor: number;
 }
 
+interface PontoDescontinuidade {
+  label: string;
+  x: number;
+  hasSupport: boolean;
+  hasPointLoad: boolean;
+  hasAppliedMoment: boolean;
+  isTransition: boolean;
+}
+
 type TipoDiagrama = 'esforcoCortante' | 'momentoFletor';
 
 const normalizeKey = (key: string) => key.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -82,7 +92,9 @@ const getMomentoDisplayFactor = (source: unknown): number => {
   if (typeof momentoUnit !== 'string') return 0.01;
 
   const normalized = momentoUnit.replace(/\s+/g, '').toLowerCase();
-  return normalized.includes('kn*m') ? 1 : 0.01;
+  if (normalized.includes('kn*cm')) return 1;
+  if (normalized.includes('kn*m')) return 0.01;
+  return 0.01;
 };
 
 const extractPointsFromUnknown = (input: unknown): PontoDiagrama[] => {
@@ -166,6 +178,38 @@ const getArrayFromCandidates = (obj: Record<string, unknown>, candidates: string
   return null;
 };
 
+const getDiscontinuityPoints = (source: unknown): PontoDescontinuidade[] => {
+  if (!source || typeof source !== 'object') return [];
+
+  const root = source as Record<string, unknown>;
+  const post = root.posProcessamento ?? root.pos_processamento ?? root.postProcessamento ?? root.post_processing;
+  const candidateRoot = (post && typeof post === 'object' && !Array.isArray(post))
+    ? post as Record<string, unknown>
+    : root;
+
+  const raw = candidateRoot.pontosDescontinuidade;
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+      const obj = item as Record<string, unknown>;
+      const x = toNumber(obj.x);
+      if (x === null) return null;
+
+      return {
+        label: typeof obj.label === 'string' ? obj.label : `x=${x}`,
+        x,
+        hasSupport: obj.hasSupport === true,
+        hasPointLoad: obj.hasPointLoad === true,
+        hasAppliedMoment: obj.hasAppliedMoment === true,
+        isTransition: obj.isTransition === true,
+      } satisfies PontoDescontinuidade;
+    })
+    .filter((item): item is PontoDescontinuidade => item !== null)
+    .sort((a, b) => a.x - b.x);
+};
+
 const findDiagramPoints = (source: unknown, aliases: string[]): PontoDiagrama[] => {
   if (!source || typeof source !== 'object') return [];
 
@@ -225,7 +269,10 @@ interface Beam3DViewerProps {
   carregamentosDistribuidos?: CarregamentoDistribuido[];
   exibirDiagramas?: boolean;
   diagramaAtivo?: TipoDiagrama;
+  escalaYDiagrama?: number;
   resultadoProcessamento?: unknown;
+  modoEnvoltoria?: boolean;
+  envelopeView?: EnvelopeDiagramView | null;
   showResetControl?: boolean;
   autoRotate?: boolean;
   autoRotateSpeed?: number;
@@ -239,7 +286,10 @@ export function Beam3DViewer({
   carregamentosDistribuidos = [],
   exibirDiagramas = false,
   diagramaAtivo = 'esforcoCortante',
+  escalaYDiagrama = 1,
   resultadoProcessamento = null,
+  modoEnvoltoria = false,
+  envelopeView = null,
   showResetControl = true,
   autoRotate = false,
   autoRotateSpeed = 0.8,
@@ -310,6 +360,10 @@ export function Beam3DViewer({
     // Calcular limites da estrutura para posicionar câmera
     const { centerX, maxHeight, structureSize, minPos, maxPos } = getViewMetrics();
     const initialDistance = Math.max(structureSize * 0.95, maxHeight * 5, 220);
+    const dynamicMaxDistance = Math.max(1000, structureSize * 12, initialDistance * 8);
+    const dynamicMinDistance = Math.max(40, Math.min(120, structureSize * 0.12));
+    camera.far = Math.max(2000, dynamicMaxDistance * 3);
+    camera.updateProjectionMatrix();
 
     const persistedView = persistedViewRef.current;
     if (persistedView) {
@@ -334,8 +388,8 @@ export function Beam3DViewer({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.minDistance = 100;
-    controls.maxDistance = 1000;
+    controls.minDistance = dynamicMinDistance;
+    controls.maxDistance = dynamicMaxDistance;
     controls.autoRotate = autoRotate;
     controls.autoRotateSpeed = autoRotateSpeed;
     if (persistedView) {
@@ -475,10 +529,16 @@ export function Beam3DViewer({
 
     let diagramHoverConfig: {
       points: PontoDiagrama[];
+      hoverPoints: Array<{ x: number; y: number; valor: number }>;
+      discontinuityPoints: PontoDescontinuidade[];
       unit: string;
       displayFactor: number;
       signFactor: number;
       label: string;
+      isEnvelopeMode?: boolean;
+      envelopePositiva?: EnvelopeDiagramPoint[];
+      envelopeNegativa?: EnvelopeDiagramPoint[];
+      secoes?: EnvelopeSection[];
     } | null = null;
 
     if (!exibirDiagramas) {
@@ -690,7 +750,7 @@ export function Beam3DViewer({
           if (!item || typeof item !== 'object' || Array.isArray(item)) return;
 
           const obj = item as Record<string, unknown>;
-          const xArray = getArrayFromCandidates(obj, ['x', 'X', 'posicoes', 'positions']);
+          const xArray = getArrayFromCandidates(obj, ['xGlobal', 'x_global', 'x', 'X', 'posicoes', 'positions']);
           const yArray = diagramaAtivo === 'esforcoCortante'
             ? getArrayFromCandidates(obj, ['shear', 'esforcoCortante', 'v'])
             : getArrayFromCandidates(obj, ['moment', 'momentoFletor', 'm']);
@@ -718,6 +778,7 @@ export function Beam3DViewer({
           const start = spanFromElement?.start ?? viga?.startPosition ?? 0;
           const end = spanFromElement?.end ?? viga?.endPosition ?? 0;
           const length = Math.abs(end - start);
+          const hasExplicitGlobalX = Array.isArray(obj.xGlobal) || Array.isArray(obj.x_global);
 
           const xNumeric = xArray
             .map((value) => toNumber(value))
@@ -732,7 +793,11 @@ export function Beam3DViewer({
             const valor = toNumber(yArray[i]);
             if (x === null || valor === null) continue;
 
-            const xGlobal = isLocalLength ? start + (x / length) * (end - start) : x;
+            const xGlobal = hasExplicitGlobalX
+              ? x
+              : isLocalLength
+                ? start + (x / length) * (end - start)
+                : x;
 
             points.push({ x: xGlobal, valor });
           }
@@ -778,9 +843,22 @@ export function Beam3DViewer({
         return sortedPoints.map((point) => ({ ...point, x: point.x * bestScale }));
       };
 
-      let points = getPointsFromDiscretizacao();
+      const isEnvelopeMode = modoEnvoltoria && Boolean(envelopeView);
 
-      if (points.length < 2) {
+      let points = getPointsFromDiscretizacao();
+      let discontinuityPoints = getDiscontinuityPoints(resultadoProcessamento);
+
+      if (isEnvelopeMode && envelopeView) {
+        points = [...envelopeView.envelopePositiva, ...envelopeView.envelopeNegativa].sort((a, b) => a.x - b.x);
+        discontinuityPoints = envelopeView.pontosDescontinuidade.map((x) => ({
+          label: `x=${x.toFixed(2)}`,
+          x,
+          hasSupport: false,
+          hasPointLoad: false,
+          hasAppliedMoment: false,
+          isTransition: true,
+        }));
+      } else if (points.length < 2) {
         points = findDiagramPoints(resultadoProcessamento, diagramaConfig.aliases);
       }
 
@@ -795,9 +873,11 @@ export function Beam3DViewer({
         const zOffset = maxHeight * 0.4;
         const plotSignFactor = diagramaAtivo === 'momentoFletor' ? -1 : 1;
         const valueSignFactor = 1;
-        const toDiagramY = (valor: number) => ((valor * plotSignFactor) / maxAbs) * (maxHeight * 1.35);
+        const diagramScaleY = Number.isFinite(escalaYDiagrama) && escalaYDiagrama > 0 ? escalaYDiagrama : 1;
+        const toDiagramY = (valor: number) => ((valor * plotSignFactor) / maxAbs) * (maxHeight * 1.35 * diagramScaleY);
         const beamHalfHeight = maxHeight / 2;
         const minimumClearance = maxHeight * 0.35;
+        const labelOffsetWorld = Math.max(32, Math.min(56, Math.abs(maxPos - minPos) * 0.08));
         const getLabelY = (pointY: number, preferredGap = maxHeight * 0.2) => {
           const isAboveBeam = pointY >= 0;
           const proposedY = isAboveBeam ? pointY + preferredGap : pointY - preferredGap;
@@ -810,17 +890,40 @@ export function Beam3DViewer({
 
           return Math.min(proposedY, maxBottomY);
         };
+        const getHorizontalLabelOffset = (index: number, total: number) => {
+          if (total <= 1) return 0;
+          return (index - (total - 1) / 2) * labelOffsetWorld;
+        };
+        const getVerticalLabelOffset = (index: number, total: number) => {
+          if (total <= 1) return 0;
+          return index % 2 === 0 ? maxHeight * 0.18 : -maxHeight * 0.18;
+        };
         const unit = diagramaAtivo === 'esforcoCortante' ? 'kN' : 'kN*m';
-
-        const displayFactor = diagramaAtivo === 'momentoFletor' ? getMomentoDisplayFactor(resultadoProcessamento) : 1;
+        const displayFactor = isEnvelopeMode
+          ? (envelopeView?.displayFactor ?? 1)
+          : diagramaAtivo === 'momentoFletor'
+            ? getMomentoDisplayFactor(resultadoProcessamento)
+            : 1;
         const formatValue = (valor: number) => `${(valor * displayFactor * valueSignFactor).toFixed(2)}`;
+        const discontinuityXs = discontinuityPoints.map((point) => point.x).sort((a, b) => a - b);
+        const hoverPoints = points.map((point) => ({
+          x: point.x,
+          y: toDiagramY(point.valor),
+          valor: point.valor,
+        }));
 
         diagramHoverConfig = {
           points,
-          unit,
+          hoverPoints,
+          discontinuityPoints,
+          unit: isEnvelopeMode ? (envelopeView?.unit ?? unit) : unit,
           displayFactor,
           signFactor: valueSignFactor,
           label: diagramaConfig.label,
+          isEnvelopeMode,
+          envelopePositiva: envelopeView?.envelopePositiva,
+          envelopeNegativa: envelopeView?.envelopeNegativa,
+          secoes: envelopeView?.secoes,
         };
 
         const baselinePoints = [
@@ -848,13 +951,187 @@ export function Beam3DViewer({
           )
         ));
 
-        const diagramGeometry = new THREE.BufferGeometry().setFromPoints(diagramPoints3D);
-        const diagramMaterial = new THREE.LineBasicMaterial({
-          color: diagramaConfig.cor,
-          linewidth: 3,
+        const splitByDiscontinuity = (branch: Array<{ x: number; valor: number }>) => {
+          if (discontinuityXs.length === 0 || branch.length < 2) {
+            return [branch];
+          }
+
+          const sorted = [...branch].sort((a, b) => a.x - b.x);
+          const toleranceDisc = 1e-6;
+          const segments: Array<Array<{ x: number; valor: number }>> = [];
+          let currentSegment: Array<{ x: number; valor: number }> = [sorted[0]];
+
+          for (let i = 1; i < sorted.length; i++) {
+            const prev = sorted[i - 1];
+            const curr = sorted[i];
+            const hasBreak = discontinuityXs.some((d) => (
+              prev.x + toleranceDisc < d && d < curr.x - toleranceDisc
+            ));
+
+            if (hasBreak && currentSegment.length >= 2) {
+              segments.push(currentSegment);
+              currentSegment = [curr];
+              continue;
+            }
+
+            currentSegment.push(curr);
+          }
+
+          if (currentSegment.length >= 2) {
+            segments.push(currentSegment);
+          }
+
+          return segments.length > 0 ? segments : [sorted];
+        };
+        const buildEnvelopeSegmentsFromSections = (branchType: 'positive' | 'negative') => {
+          const sections = (envelopeView?.secoes ?? []).slice().sort((a, b) => a.x - b.x);
+          if (sections.length === 0) {
+            return branchType === 'positive'
+              ? splitByDiscontinuity(envelopeView?.envelopePositiva ?? [])
+              : splitByDiscontinuity(envelopeView?.envelopeNegativa ?? []);
+          }
+
+          const getSectionValue = (section: EnvelopeSection) => {
+            const source = branchType === 'positive' ? section.ramosPositivos : section.ramosNegativos;
+            const values = source.flatMap((branch) => branch.valores);
+            if (values.length === 0) return null;
+            return branchType === 'positive' ? Math.max(...values) : Math.min(...values);
+          };
+
+          const getSectionTolerance = (entries: Array<{ x: number }>) => {
+            if (entries.length < 2) return 1e-3;
+
+            const sorted = [...entries].sort((a, b) => a.x - b.x);
+            let minDelta = Number.POSITIVE_INFINITY;
+
+            for (let i = 1; i < sorted.length; i++) {
+              const delta = Math.abs(sorted[i].x - sorted[i - 1].x);
+              if (delta > 1e-9) {
+                minDelta = Math.min(minDelta, delta);
+              }
+            }
+
+            if (!Number.isFinite(minDelta)) return 1e-3;
+            return Math.max(1e-6, minDelta / 2);
+          };
+
+          const toleranceDisc = Math.max(1e-6, getSectionTolerance(sections));
+          const segments: Array<Array<{ x: number; valor: number }>> = [];
+          let current: Array<{ x: number; valor: number }> = [];
+          let prevX: number | null = null;
+
+          const flush = () => {
+            if (current.length >= 2) {
+              segments.push(current);
+            }
+            current = [];
+          };
+
+          sections.forEach((section) => {
+            const value = getSectionValue(section);
+            if (value === null) {
+              flush();
+              prevX = null;
+              return;
+            }
+
+            const prevXValue = prevX;
+            const hasBreak = prevXValue !== null && discontinuityXs.some((d) => (
+              prevXValue + toleranceDisc < d && d < section.x - toleranceDisc
+            ));
+
+            if (hasBreak) {
+              flush();
+            }
+
+            current.push({ x: section.x, valor: value });
+            prevX = section.x;
+          });
+
+          flush();
+          return segments;
+        };
+
+        if (!isEnvelopeMode) {
+          splitByDiscontinuity(points).forEach((segment) => {
+            const segmentGeometry = new THREE.BufferGeometry().setFromPoints(segment.map((point) => (
+              new THREE.Vector3(point.x, toDiagramY(point.valor), zOffset)
+            )));
+            const diagramMaterial = new THREE.LineBasicMaterial({
+              color: diagramaConfig.cor,
+              linewidth: 3,
+            });
+            const diagramLine = new THREE.Line(segmentGeometry, diagramMaterial);
+            scene.add(diagramLine);
+          });
+        }
+
+        if (isEnvelopeMode && envelopeView) {
+          const to3D = (branch: Array<{ x: number; valor: number }>) => branch.map((point) => (
+            new THREE.Vector3(point.x, toDiagramY(point.valor), zOffset)
+          ));
+          const baseCurves = envelopeView.bases ?? [
+            { id: 'segundoGenero', label: 'Segundo genero', points: envelopeView.baseSegundoGenero },
+            { id: 'engastado', label: 'Engastado', points: envelopeView.baseEngastado },
+          ];
+          const envelopePositivaSegments = buildEnvelopeSegmentsFromSections('positive');
+          const envelopeNegativaSegments = buildEnvelopeSegmentsFromSections('negative');
+          const dashedBaseColors = [0x60a5fa, 0xf59e0b, 0x22c55e, 0xa855f7, 0x06b6d4, 0xf97316];
+
+          baseCurves.forEach((baseCurve, index) => {
+            splitByDiscontinuity(baseCurve.points).forEach((segment) => {
+              const baseGeo = new THREE.BufferGeometry().setFromPoints(to3D(segment));
+              const baseLine = new THREE.Line(baseGeo, new THREE.LineDashedMaterial({
+                color: dashedBaseColors[index % dashedBaseColors.length],
+                dashSize: 4,
+                gapSize: 3,
+                transparent: true,
+                opacity: 0.45,
+              }));
+              baseLine.computeLineDistances();
+              scene.add(baseLine);
+            });
+          });
+
+          envelopePositivaSegments.forEach((segment) => {
+            const envPosGeo = new THREE.BufferGeometry().setFromPoints(to3D(segment));
+            const envPosLine = new THREE.Line(envPosGeo, new THREE.LineBasicMaterial({
+              color: 0x16a34a,
+              linewidth: 3,
+            }));
+            scene.add(envPosLine);
+          });
+
+          envelopeNegativaSegments.forEach((segment) => {
+            const envNegGeo = new THREE.BufferGeometry().setFromPoints(to3D(segment));
+            const envNegLine = new THREE.Line(envNegGeo, new THREE.LineBasicMaterial({
+              color: 0xdc2626,
+              linewidth: 3,
+            }));
+            scene.add(envNegLine);
+          });
+        }
+
+        if (!isEnvelopeMode) {
+          const diagramPointGeometry = new THREE.BufferGeometry().setFromPoints(diagramPoints3D);
+          const diagramPointMaterial = new THREE.PointsMaterial({
+            color: diagramaConfig.cor,
+            size: maxHeight * 0.07,
+            sizeAttenuation: false,
+            transparent: true,
+            opacity: 0.9,
+          });
+          const diagramPointCloud = new THREE.Points(diagramPointGeometry, diagramPointMaterial);
+          scene.add(diagramPointCloud);
+        }
+
+        discontinuityPoints.forEach((point) => {
+          const markerGeometry = new THREE.SphereGeometry(maxHeight * 0.045, 10, 10);
+          const markerMaterial = new THREE.MeshStandardMaterial({ color: 0xf59e0b });
+          const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+          marker.position.set(point.x, 0, zOffset + maxHeight * 0.03);
+          scene.add(marker);
         });
-        const diagramLine = new THREE.Line(diagramGeometry, diagramMaterial);
-        scene.add(diagramLine);
 
         const nodePositions = Array.from(
           new Set(vigas.flatMap((viga) => [viga.startPosition, viga.endPosition]))
@@ -887,14 +1164,18 @@ export function Beam3DViewer({
                 getClosestPointToNode(nodeX, 'right'),
               ].filter((point): point is PontoDiagrama => point !== null);
 
-          return candidatePoints
+          const uniquePoints = candidatePoints
             .filter((point, index, allPoints) => (
               allPoints.findIndex((candidate) => Math.abs(candidate.valor - point.valor) < tolerance) === index
-            ))
-            .map((point, index) => ({
+            ));
+
+          return uniquePoints.map((point, index) => ({
               key: `node-point-${nodeX}-${index}`,
               x: nodeX,
               valor: point.valor,
+              siblingIndex: index,
+              siblingCount: uniquePoints.length,
+              labelOffsetX: getHorizontalLabelOffset(index, uniquePoints.length),
             }));
         });
         const isPointOnNode = (point: PontoDiagrama) => nodePoints.some(
@@ -903,6 +1184,8 @@ export function Beam3DViewer({
 
         nodePoints.forEach((point) => {
           const y = toDiagramY(point.valor);
+          const labelX = point.x + point.labelOffsetX;
+          const labelY = getLabelY(y, maxHeight * 0.28) + getVerticalLabelOffset(point.siblingIndex, point.siblingCount);
 
           const markerGeometry = new THREE.SphereGeometry(maxHeight * 0.05, 10, 10);
           const markerMaterial = new THREE.MeshStandardMaterial({ color: diagramaConfig.cor });
@@ -910,9 +1193,27 @@ export function Beam3DViewer({
           marker.position.set(point.x, y, zOffset);
           scene.add(marker);
 
+          if (point.labelOffsetX !== 0) {
+            const connectorGeometry = new THREE.BufferGeometry().setFromPoints([
+              new THREE.Vector3(point.x, y, zOffset),
+              new THREE.Vector3(labelX, labelY, zOffset),
+            ]);
+            const connectorMaterial = new THREE.LineDashedMaterial({
+              color: diagramaConfig.cor,
+              dashSize: 3,
+              gapSize: 2,
+              linewidth: 1,
+              transparent: true,
+              opacity: 0.8,
+            });
+            const connector = new THREE.Line(connectorGeometry, connectorMaterial);
+            connector.computeLineDistances();
+            scene.add(connector);
+          }
+
           const nodeLabel = createTextSprite(`${formatValue(point.valor)} ${unit}`, `#${diagramaConfig.cor.toString(16).padStart(6, '0')}`, 38);
           if (nodeLabel) {
-            nodeLabel.position.set(point.x, getLabelY(y, maxHeight * 0.16), zOffset);
+            nodeLabel.position.set(labelX, labelY, zOffset);
             nodeLabel.renderOrder = 999;
             scene.add(nodeLabel);
           }
@@ -924,12 +1225,15 @@ export function Beam3DViewer({
         const minPoint = points.reduce((best, current) => (
           (current.valor * valueSignFactor) < (best.valor * valueSignFactor) ? current : best
         ), points[0]);
+        const positivePointsForSpan = isEnvelopeMode && envelopeView
+          ? envelopeView.envelopePositiva
+          : points;
         const localPositiveMaxPoints = diagramaAtivo === 'momentoFletor'
           ? vigas
               .flatMap((viga) => {
                 const vigaMin = Math.min(viga.startPosition, viga.endPosition);
                 const vigaMax = Math.max(viga.startPosition, viga.endPosition);
-                const spanPoints = points.filter(
+                const spanPoints = positivePointsForSpan.filter(
                   (point) => point.x >= vigaMin - tolerance && point.x <= vigaMax + tolerance
                 );
 
@@ -1023,30 +1327,131 @@ export function Beam3DViewer({
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, cameraRef.current);
+      const intersects = raycaster.intersectObjects(sceneRef.current.children, false);
 
       if (diagramHoverConfig) {
+        const hoveredBeam = intersects.find((intersection) => intersection.object?.userData?.type === 'beam');
+        if (!hoveredBeam) {
+          setTooltip({ visible: false, text: '', x: 0, y: 0 });
+          return;
+        }
+
         const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
         const intersection = new THREE.Vector3();
         const hit = raycaster.ray.intersectPlane(plane, intersection);
 
         if (hit) {
+          const nearestHoverPoint = diagramHoverConfig.hoverPoints.reduce((nearest, current) => {
+            const nearestDistance = Math.hypot(nearest.x - intersection.x, nearest.y - intersection.y);
+            const currentDistance = Math.hypot(current.x - intersection.x, current.y - intersection.y);
+            return currentDistance < nearestDistance ? current : nearest;
+          });
+
+          const hoverDistance = Math.hypot(nearestHoverPoint.x - intersection.x, nearestHoverPoint.y - intersection.y);
+          const hoverTolerance = maxHeight * 0.4;
+
+          if (hoverDistance > hoverTolerance) {
+            setTooltip({ visible: false, text: '', x: 0, y: 0 });
+            return;
+          }
+
           const nearestPoint = diagramHoverConfig.points.reduce((nearest, current) => (
-            Math.abs(current.x - intersection.x) < Math.abs(nearest.x - intersection.x) ? current : nearest
+            Math.abs(current.x - nearestHoverPoint.x) < Math.abs(nearest.x - nearestHoverPoint.x) ? current : nearest
           ));
 
           const displayValue = (nearestPoint.valor * diagramHoverConfig.displayFactor * diagramHoverConfig.signFactor).toFixed(2);
+          const nearestDiscontinuity = diagramHoverConfig.discontinuityPoints.reduce<PontoDescontinuidade | null>((nearest, current) => {
+            if (Math.abs(current.x - nearestPoint.x) > 1e-6) {
+              return nearest;
+            }
+
+            if (!nearest) {
+              return current;
+            }
+
+            const nearestWeight = Number(nearest.hasSupport) + Number(nearest.hasPointLoad) + Number(nearest.hasAppliedMoment) + Number(nearest.isTransition);
+            const currentWeight = Number(current.hasSupport) + Number(current.hasPointLoad) + Number(current.hasAppliedMoment) + Number(current.isTransition);
+            return currentWeight > nearestWeight ? current : nearest;
+          }, null);
+          const discontinuityTags = nearestDiscontinuity
+            ? [
+                nearestDiscontinuity.hasSupport ? 'apoio' : null,
+                nearestDiscontinuity.hasPointLoad ? 'carga pontual' : null,
+                nearestDiscontinuity.hasAppliedMoment ? 'momento aplicado' : null,
+                nearestDiscontinuity.isTransition ? 'transicao' : null,
+              ].filter((value): value is string => value !== null)
+            : [];
+          const discontinuitySuffix = discontinuityTags.length > 0 ? ` | ${discontinuityTags.join(', ')}` : '';
+
+          if (diagramHoverConfig.isEnvelopeMode) {
+            const getSectionTolerance = (sections: Array<{ x: number }> | undefined) => {
+              if (!sections || sections.length < 2) return 1e-3;
+
+              const sorted = [...sections].sort((a, b) => a.x - b.x);
+              let minDelta = Number.POSITIVE_INFINITY;
+              for (let i = 1; i < sorted.length; i++) {
+                const delta = Math.abs(sorted[i].x - sorted[i - 1].x);
+                if (delta > 1e-9) {
+                  minDelta = Math.min(minDelta, delta);
+                }
+              }
+
+              if (!Number.isFinite(minDelta)) return 1e-3;
+              return Math.max(1e-6, minDelta / 2);
+            };
+
+            const nearestSectionByX = (sections: EnvelopeSection[] | undefined) => {
+              if (!sections || sections.length === 0) return null;
+
+              const tolerance = getSectionTolerance(sections);
+              const inSection = sections.filter((section) => Math.abs(section.x - nearestPoint.x) <= tolerance);
+              if (inSection.length === 0) return null;
+
+              return inSection.reduce((nearest, current) => (
+                Math.abs(current.x - nearestPoint.x) < Math.abs(nearest.x - nearestPoint.x) ? current : nearest
+              ));
+            };
+
+            const secao = nearestSectionByX(diagramHoverConfig.secoes);
+            const formatEnvelopeBranch = (
+              branches: EnvelopeSection['ramosPositivos'] | EnvelopeSection['ramosNegativos'],
+              governante: string | null,
+              mode: 'positive' | 'negative',
+            ) => {
+              if (!branches || branches.length === 0) return 'n/a';
+
+              const valores = branches.flatMap((branch) => branch.valores);
+              if (valores.length === 0) return 'n/a';
+
+              const branchValue = mode === 'positive' ? Math.max(...valores) : Math.min(...valores);
+              const displayBranchValue = (branchValue * diagramHoverConfig.displayFactor * diagramHoverConfig.signFactor).toFixed(2);
+              const curvas = branches.map((branch) => branch.curvaId).join(', ');
+              const governanteTxt = governante ?? 'n/a';
+
+              return `${displayBranchValue} ${diagramHoverConfig.unit} (gov: ${governanteTxt}; curvas: ${curvas})`;
+            };
+
+            const envPosTxt = formatEnvelopeBranch(secao?.ramosPositivos ?? [], secao?.governantePositivo ?? null, 'positive');
+            const envNegTxt = formatEnvelopeBranch(secao?.ramosNegativos ?? [], secao?.governanteNegativo ?? null, 'negative');
+
+            setTooltip({
+              visible: true,
+              text: `x: ${nearestPoint.x.toFixed(2)} cm | Env+: ${envPosTxt} | Env-: ${envNegTxt}${discontinuitySuffix}`,
+              x: event.clientX - rect.left,
+              y: event.clientY - rect.top,
+            });
+            return;
+          }
 
           setTooltip({
             visible: true,
-            text: `x: ${nearestPoint.x.toFixed(2)} cm | ${diagramHoverConfig.label}: ${displayValue} ${diagramHoverConfig.unit}`,
+            text: `x: ${nearestPoint.x.toFixed(2)} cm | ${diagramHoverConfig.label}: ${displayValue} ${diagramHoverConfig.unit}${discontinuitySuffix}`,
             x: event.clientX - rect.left,
             y: event.clientY - rect.top,
           });
           return;
         }
       }
-
-      const intersects = raycaster.intersectObjects(sceneRef.current.children, false);
 
       if (intersects.length > 0) {
         const object = intersects[0].object;
@@ -1176,6 +1581,9 @@ export function Beam3DViewer({
     exibirDiagramas,
     diagramaAtivo,
     resultadoProcessamento,
+    modoEnvoltoria,
+    envelopeView,
+    escalaYDiagrama,
     autoRotate,
     autoRotateSpeed,
   ]);
@@ -1240,7 +1648,9 @@ export function Beam3DViewer({
     if (!cameraRef.current || !controlsRef.current) return;
     const direction = new THREE.Vector3();
     direction.subVectors(controlsRef.current.target, cameraRef.current.position).normalize();
-    cameraRef.current.position.addScaledVector(direction, 50);
+    const currentDistance = cameraRef.current.position.distanceTo(controlsRef.current.target);
+    const step = Math.max(50, currentDistance * 0.12);
+    cameraRef.current.position.addScaledVector(direction, step);
     controlsRef.current.update();
   }, []);
 
@@ -1248,7 +1658,9 @@ export function Beam3DViewer({
     if (!cameraRef.current || !controlsRef.current) return;
     const direction = new THREE.Vector3();
     direction.subVectors(controlsRef.current.target, cameraRef.current.position).normalize();
-    cameraRef.current.position.addScaledVector(direction, -50);
+    const currentDistance = cameraRef.current.position.distanceTo(controlsRef.current.target);
+    const step = Math.max(50, currentDistance * 0.12);
+    cameraRef.current.position.addScaledVector(direction, -step);
     controlsRef.current.update();
   }, []);
 

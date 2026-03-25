@@ -1,8 +1,8 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useVigaConcretoArmado } from '@/features/viga-concreto-armado/context/viga-concreto-armado-provider';
-import { DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA, type CarregamentoDistribuido, type CarregamentoPontual, type CategoriaCarregamentoDistribuido, type Pilar, type ResultadosProcessamentoViga, type SelecaoDiagramaViga, type TipoDiagrama, type TipoModeloApoioIntermediario, type Viga } from '@/features/viga-concreto-armado/types';
+import { DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA, type CarregamentoDistribuido, type CarregamentoPontual, type CategoriaCarregamentoDistribuido, type EnvelopeDiagramView, type Pilar, type ResultadosProcessamentoViga, type SelecaoDiagramaViga, type TipoDiagrama, type TipoModeloApoioIntermediario, type Viga } from '@/features/viga-concreto-armado/types';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar, SidebarToggleButton, type MenuItem } from '../../../components/user/molecules/sidebar';
 import { Beam3DViewer } from '../../../components/user/molecules/beam-3d-viewer';
@@ -42,23 +42,39 @@ type ClassificacaoApoios = {
   estruturaEhVigaContinua: boolean;
 };
 
+type EnvelopeApiResponse = {
+  modelos: Record<string, unknown>;
+  envoltoria: {
+    esforcoCortante: EnvelopeDiagramView;
+    momentoFletor: EnvelopeDiagramView;
+  };
+};
+
 const OPCOES_DIAGRAMA_CONTINUO: OpcaoDiagrama[] = [
-  { value: 'cortante-segundo-genero', label: 'Cortante - Apoios de segundo gênero' },
-  { value: 'momento-segundo-genero', label: 'Momento - Apoios de segundo gênero' },
-  { value: 'cortante-engastado', label: 'Cortante - Apoios engastados' },
-  { value: 'momento-engastado', label: 'Momento - Apoios engastados' },
+  { value: 'cortante-segundo-genero', label: 'Esforço Cortante - Apoios de segundo gênero' },
+  { value: 'momento-segundo-genero', label: 'Momento Fletor - Apoios de segundo gênero' },
+  { value: 'cortante-engastado', label: 'Esforço Cortante - Apoios engastados' },
+  { value: 'momento-engastado', label: 'Momento Fletor - Apoios engastados' },
+  { value: 'cortante-envoltoria', label: 'Esforço Cortante - Envoltória' },
+  { value: 'momento-envoltoria', label: 'Momento Fletor - Envoltória' },
 ];
 
 const OPCOES_DIAGRAMA_SIMPLES: OpcaoDiagrama[] = [
-  { value: 'cortante-segundo-genero', label: 'Cortante' },
-  { value: 'momento-segundo-genero', label: 'Momento' },
+  { value: 'cortante-segundo-genero', label: 'Esforço Cortante' },
+  { value: 'momento-segundo-genero', label: 'Momento Fletor' },
 ];
 
 function getTipoDiagramaFromSelecao(selecao: SelecaoDiagramaViga): TipoDiagrama {
   return selecao.startsWith('momento') ? 'momentoFletor' : 'esforcoCortante';
 }
 
-function getModeloFromSelecao(selecao: SelecaoDiagramaViga): TipoModeloApoioIntermediario {
+type ModeloDiagramaAtivo = TipoModeloApoioIntermediario | 'envoltoria';
+
+function getModeloFromSelecao(selecao: SelecaoDiagramaViga): ModeloDiagramaAtivo {
+  if (selecao.endsWith('envoltoria')) {
+    return 'envoltoria';
+  }
+
   return selecao.endsWith('engastado') ? 'engastado' : 'segundoGenero';
 }
 
@@ -75,9 +91,12 @@ function getTituloDiagrama(selecao: SelecaoDiagramaViga, estruturaEhVigaContinua
     return `Diagrama ativo: ${prefixo}`;
   }
 
-  const sufixo = getModeloFromSelecao(selecao) === 'engastado'
+  const modelo = getModeloFromSelecao(selecao);
+  const sufixo = modelo === 'engastado'
     ? 'Apoios engastados'
-    : 'Apoios de segundo gênero';
+    : modelo === 'envoltoria'
+      ? 'Envoltória'
+      : 'Apoios de segundo gênero';
 
   return `Diagrama ativo: ${prefixo} - ${sufixo}`;
 }
@@ -195,6 +214,9 @@ export default function FnsPage() {
 
   const [isProcessingStructure, setIsProcessingStructure] = useState(false);
   const [processingStructureMessage, setProcessingStructureMessage] = useState<string | null>(null);
+  const [successPopupMessage, setSuccessPopupMessage] = useState<string | null>(null);
+  const [envelopeFromApi, setEnvelopeFromApi] = useState<EnvelopeApiResponse['envoltoria'] | null>(null);
+  const [escalaYDiagrama, setEscalaYDiagrama] = useState(1);
 
   const categoriasCarregamentoDistribuido: CategoriaCarregamentoDistribuido[] = ['g1', 'g2', 'q'];
 
@@ -242,9 +264,34 @@ export default function FnsPage() {
     : getSelecaoSemEngaste(selecaoDiagrama);
   const diagramaAtivo = getTipoDiagramaFromSelecao(selecaoDiagramaEfetiva);
   const modeloDiagramaAtivo = getModeloFromSelecao(selecaoDiagramaEfetiva);
+  const envelopeResult = useMemo(() => {
+    if (!estruturaEhVigaContinua || modeloDiagramaAtivo !== 'envoltoria') {
+      return { data: null, error: null as string | null };
+    }
+
+    if (envelopeFromApi) {
+      return {
+        data: diagramaAtivo === 'esforcoCortante'
+          ? envelopeFromApi.esforcoCortante
+          : envelopeFromApi.momentoFletor,
+        error: null as string | null,
+      };
+    }
+
+    if (!resultadosProcessamento.segundoGenero || !resultadosProcessamento.engastado) {
+      return { data: null, error: 'Processe a estrutura para os dois modelos antes de usar a envoltória.' };
+    }
+
+    return { data: null, error: 'Envoltória da API indisponível para esta configuração.' };
+  }, [diagramaAtivo, envelopeFromApi, estruturaEhVigaContinua, modeloDiagramaAtivo, resultadosProcessamento.engastado, resultadosProcessamento.segundoGenero]);
+
   const resultadoProcessamentoAtivo = estruturaEhVigaContinua
-    ? resultadosProcessamento[modeloDiagramaAtivo]
+    ? (modeloDiagramaAtivo === 'envoltoria' ? null : resultadosProcessamento[modeloDiagramaAtivo])
     : resultadosProcessamento.segundoGenero;
+  const estruturaProcessada = estruturaEhVigaContinua
+    ? Boolean(envelopeFromApi && resultadosProcessamento.segundoGenero && resultadosProcessamento.engastado)
+    : Boolean(resultadosProcessamento.segundoGenero);
+  const podeMostrarDiagramas = estruturaProcessada && !isProcessingStructure;
 
   // Função para verificar se há balanço bloqueando posição
   const getPilaresComBalanco = () => {
@@ -614,9 +661,11 @@ export default function FnsPage() {
     setIsProcessingStructure(true);
     setProcessingStructureMessage(null);
     setResultadosProcessamento(DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA);
+    setEnvelopeFromApi(null);
 
     const apiBaseUrl = process.env.NEXT_PUBLIC_ESTRUTURA_API_URL ?? 'http://localhost:3001';
     const apiPath = process.env.NEXT_PUBLIC_ESTRUTURA_API_PATH ?? '/beam2d/system';
+    const apiEnvelopePath = process.env.NEXT_PUBLIC_ESTRUTURA_API_ENVELOPE_PATH ?? '/beam2d/envelope';
     const eModulo = Number(process.env.NEXT_PUBLIC_BEAM_E ?? 210_000);
     const nodePositions = Array.from(
       new Set(vigas.flatMap((viga) => [viga.startPosition, viga.endPosition]))
@@ -726,6 +775,7 @@ export default function FnsPage() {
         },
         body: JSON.stringify({
           elementos: elementosPayload,
+          passoDiscretizacao: 1,
           diagramas,
           sistemaDeUnidades: {
             distancia: 'cm',
@@ -759,30 +809,84 @@ export default function FnsPage() {
       return responseData;
     };
 
-    const modelosParaProcessar: TipoModeloApoioIntermediario[] = estruturaEhVigaContinua
-      ? ['segundoGenero', 'engastado']
-      : ['segundoGenero'];
-
     try {
-      const resultados = await Promise.all(
-        modelosParaProcessar.map(async (modelo) => [modelo, await processarModelo(modelo)] as const)
-      );
+      if (estruturaEhVigaContinua) {
+        const response = await fetch(apiBaseUrl + apiEnvelopePath, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            curvas: [
+              {
+                id: 'segundoGenero',
+                label: 'Apoios de segundo gênero',
+                sistema: {
+                  elementos: buildElementosPayload(buildNodeDataByPosition('segundoGenero')),
+                  passoDiscretizacao: 1,
+                  diagramas,
+                  sistemaDeUnidades: {
+                    distancia: 'cm',
+                    forca: 'kN',
+                    area: 'cm²',
+                    momentoDeInercia: 'cm^4',
+                    moduloElasticidade: 'MPa',
+                    cargaDistribuida: 'kN/m',
+                    momento: 'kN*m',
+                  },
+                },
+              },
+              {
+                id: 'engastado',
+                label: 'Apoios engastados',
+                sistema: {
+                  elementos: buildElementosPayload(buildNodeDataByPosition('engastado')),
+                  passoDiscretizacao: 1,
+                  diagramas,
+                  sistemaDeUnidades: {
+                    distancia: 'cm',
+                    forca: 'kN',
+                    area: 'cm²',
+                    momentoDeInercia: 'cm^4',
+                    moduloElasticidade: 'MPa',
+                    cargaDistribuida: 'kN/m',
+                    momento: 'kN*m',
+                  },
+                },
+              },
+            ],
+          }),
+        });
 
-      const proximosResultados: ResultadosProcessamentoViga = {
-        ...DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA,
-      };
+        const responseText = await response.text();
+        const responseData: EnvelopeApiResponse = responseText ? JSON.parse(responseText) : null;
 
-      resultados.forEach(([modelo, resultado]) => {
-        proximosResultados[modelo] = resultado;
-      });
+        if (!response.ok || !responseData?.modelos || !responseData?.envoltoria) {
+          throw new Error('Falha ao processar envoltória no backend.');
+        }
 
-      setResultadosProcessamento(proximosResultados);
-      setProcessingStructureMessage(
+        setResultadosProcessamento({
+          ...DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA,
+          segundoGenero: responseData.modelos.segundoGenero ?? null,
+          engastado: responseData.modelos.engastado ?? null,
+        });
+        setEnvelopeFromApi(responseData.envoltoria);
+      } else {
+        const resultadoSegundoGenero = await processarModelo('segundoGenero');
+        setResultadosProcessamento({
+          ...DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA,
+          segundoGenero: resultadoSegundoGenero,
+        });
+      }
+
+      setProcessingStructureMessage(null);
+      setSuccessPopupMessage(
         estruturaEhVigaContinua
-          ? 'Estrutura processada com sucesso para os modelos com apoios de segundo gênero e apoios intermediários engastados.'
-          : 'Estrutura processada com sucesso.'
+          ? 'Sucesso: Estrutura e envoltória processadas, clique em mostrar diagramas para ver o DEC e DMF.'
+          : 'Sucesso: Estrutura processada, clique em mostrar diagramas para ver o DEC e DMF.'
       );
     } catch (error) {
+      setSuccessPopupMessage(null);
       const message = error instanceof Error ? error.message : 'Erro desconhecido ao processar estrutura.';
       setProcessingStructureMessage(message);
     } finally {
@@ -806,7 +910,18 @@ export default function FnsPage() {
 
   useEffect(() => {
     resetProcessamentoVisualizacao();
+    setEnvelopeFromApi(null);
   }, [carregamentosDistribuidos, carregamentosPontuais, pilares, resetProcessamentoVisualizacao, vigas]);
+
+  useEffect(() => {
+    if (!successPopupMessage) return;
+
+    const timer = window.setTimeout(() => {
+      setSuccessPopupMessage(null);
+    }, 3800);
+
+    return () => window.clearTimeout(timer);
+  }, [successPopupMessage]);
 
   return (
     <SidebarProvider defaultOpen={false}>
@@ -831,37 +946,26 @@ export default function FnsPage() {
                 <h1 className={styles.headerStyles.title + ' ' + styles.fontSizesResponsive.pageTitle}>
                   Dimensionamento de Vigas (FNS)
                 </h1>
-                <div className="flex items-center gap-2">
-                  <Button onClick={processarEstrutura} disabled={isProcessingStructure}>
-                    {isProcessingStructure ? 'Processando...' : 'Processar estrutura'}
-                  </Button>
-                  <Button
-                    variant={mostrarDiagramas ? 'default' : 'outline'}
-                    onClick={() => setMostrarDiagramas((prev) => !prev)}
-                  >
-                    {mostrarDiagramas ? 'Mostrar cargas' : 'Mostrar diagramas'}
-                  </Button>
-                  {mostrarDiagramas && (
-                    <Select
-                      value={selecaoDiagramaEfetiva}
-                      onValueChange={(value) => setSelecaoDiagrama(value as SelecaoDiagramaViga)}
+                <div className="flex flex-col items-end gap-2">
+                  <div className="flex items-center gap-2">
+                    <Button onClick={processarEstrutura} disabled={isProcessingStructure}>
+                      {isProcessingStructure ? 'Processando...' : 'Processar estrutura'}
+                    </Button>
+                    <Button
+                      variant={mostrarDiagramas ? 'default' : 'outline'}
+                      disabled={!podeMostrarDiagramas}
+                      onClick={() => setMostrarDiagramas((prev) => !prev)}
                     >
-                      <SelectTrigger className="w-[320px]">
-                        <SelectValue placeholder="Selecione o diagrama" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {opcoesDiagrama.map((opcao) => (
-                          <SelectItem key={opcao.value} value={opcao.value}>
-                            {opcao.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
+                      {mostrarDiagramas ? 'Mostrar cargas' : 'Mostrar diagramas'}
+                    </Button>
+                  </div>
                 </div>
               </div>
               {processingStructureMessage && (
-                <p className="mt-2 text-sm text-muted-foreground">{processingStructureMessage}</p>
+                <p className="mt-2 text-sm text-red-700">{processingStructureMessage}</p>
+              )}
+              {envelopeResult.error && mostrarDiagramas && modeloDiagramaAtivo === 'envoltoria' && (
+                <p className="mt-2 text-sm text-amber-700">{envelopeResult.error}</p>
               )}
             </div>
           </div>
@@ -1316,7 +1420,10 @@ export default function FnsPage() {
                           carregamentosDistribuidos={exibirDiagramas ? [] : carregamentosDistribuidosVisualizacao}
                           exibirDiagramas={exibirDiagramas}
                           diagramaAtivo={diagramaAtivo}
+                          escalaYDiagrama={escalaYDiagrama}
                           resultadoProcessamento={resultadoProcessamentoAtivo}
+                          modoEnvoltoria={modeloDiagramaAtivo === 'envoltoria'}
+                          envelopeView={envelopeResult.data}
                         />
                       </div>
                     </TabsContent>
@@ -1330,10 +1437,84 @@ export default function FnsPage() {
                           carregamentosDistribuidos={exibirDiagramas ? [] : carregamentosDistribuidosVisualizacao}
                           exibirDiagramas={exibirDiagramas}
                           diagramaAtivo={diagramaAtivo}
+                          escalaYDiagrama={escalaYDiagrama}
                           resultadoProcessamento={resultadoProcessamentoAtivo}
+                          modoEnvoltoria={modeloDiagramaAtivo === 'envoltoria'}
+                          envelopeView={envelopeResult.data}
                         />
                       </div>
                     </TabsContent>
+                  </div>
+
+                  <div className="border-t border-border bg-slate-100 dark:bg-slate-800 px-3 md:px-4 py-2 md:py-3 flex items-center">
+                    <div className="flex w-full items-center justify-between gap-3 flex-wrap">
+                      <span className="text-xs font-semibold text-foreground">Controles da visualização</span>
+                      {mostrarDiagramas ? (
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={selecaoDiagramaEfetiva}
+                            onValueChange={(value) => setSelecaoDiagrama(value as SelecaoDiagramaViga)}
+                          >
+                            <SelectTrigger className="h-8 w-[320px] text-xs">
+                              <SelectValue placeholder="Selecione o diagrama" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {opcoesDiagrama.map((opcao) => (
+                                <SelectItem key={opcao.value} value={opcao.value} className="text-xs">
+                                  {opcao.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+
+                          <div className="flex items-center gap-1 rounded-md border border-border px-2 py-1">
+                            <span className="text-xs text-muted-foreground">Escala Y</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-3 text-xs"
+                              onClick={() => setEscalaYDiagrama((prev) => Math.max(0.2, Number((prev - 0.2).toFixed(2))))}
+                            >
+                              -
+                            </Button>
+                            <Input
+                              type="number"
+                              min={0.2}
+                              max={8}
+                              step={0.1}
+                              value={escalaYDiagrama}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                if (!Number.isFinite(val)) return;
+                                setEscalaYDiagrama(Math.min(8, Math.max(0.2, val)));
+                              }}
+                              className="h-8 w-20 text-center text-xs"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-3 text-xs"
+                              onClick={() => setEscalaYDiagrama((prev) => Math.min(8, Number((prev + 0.2).toFixed(2))))}
+                            >
+                              +
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-3 text-xs"
+                              onClick={() => setEscalaYDiagrama(1)}
+                            >
+                              1x
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Ative "Mostrar diagramas" para configurar diagrama e escala.</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </Tabs>
@@ -1350,6 +1531,12 @@ export default function FnsPage() {
           </p>
         </div>
       </footer>
+
+      {successPopupMessage && (
+        <div className="fixed bottom-16 right-4 z-50 max-w-md rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 shadow-md">
+          <p className="text-sm font-medium text-emerald-900">{successPopupMessage}</p>
+        </div>
+      )}
     </SidebarProvider>
   );
 }

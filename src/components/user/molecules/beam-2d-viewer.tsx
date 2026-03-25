@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import type { EnvelopeSection, EnvelopeDiagramView } from '@/features/viga-concreto-armado/types';
 
 interface Pilar {
   id: string;
@@ -71,7 +72,27 @@ const getMomentoDisplayFactor = (source: unknown): number => {
   if (typeof momentoUnit !== 'string') return 0.01;
 
   const normalized = momentoUnit.replace(/\s+/g, '').toLowerCase();
-  return normalized.includes('kn*m') ? 1 : 0.01;
+  if (normalized.includes('kn*cm')) return 1;
+  if (normalized.includes('kn*m')) return 0.01;
+  return 0.01;
+};
+
+const getDiscontinuityXsFromResult = (source: unknown): number[] => {
+  if (!source || typeof source !== 'object') return [];
+
+  const root = source as Record<string, unknown>;
+  const post = root.posProcessamento ?? root.pos_processamento ?? root.postProcessamento ?? root.post_processing;
+  const candidateRoot = (post && typeof post === 'object' && !Array.isArray(post))
+    ? post as Record<string, unknown>
+    : root;
+
+  const raw = candidateRoot.pontosDescontinuidade;
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item) => (item && typeof item === 'object' ? toNumber((item as Record<string, unknown>).x) : null))
+    .filter((value): value is number => value !== null)
+    .sort((a, b) => a - b);
 };
 
 const extractPointsFromUnknown = (input: unknown): PontoDiagrama[] => {
@@ -214,7 +235,10 @@ interface Beam2DViewerProps {
   carregamentosDistribuidos?: CarregamentoDistribuido[];
   exibirDiagramas?: boolean;
   diagramaAtivo?: TipoDiagrama;
+  escalaYDiagrama?: number;
   resultadoProcessamento?: unknown;
+  modoEnvoltoria?: boolean;
+  envelopeView?: EnvelopeDiagramView | null;
   className?: string;
 }
 
@@ -225,13 +249,23 @@ export function Beam2DViewer({
   carregamentosDistribuidos = [],
   exibirDiagramas = false,
   diagramaAtivo = 'esforcoCortante',
+  escalaYDiagrama = 1,
   resultadoProcessamento = null,
+  modoEnvoltoria = false,
+  envelopeView = null,
   className = '' 
 }: Beam2DViewerProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 300 });
-  const [diagramHover, setDiagramHover] = useState<{ x: number; valor: number; svgX: number; svgY: number } | null>(null);
+  const [diagramHover, setDiagramHover] = useState<{
+    x: number;
+    valor: number;
+    svgX: number;
+    svgY: number;
+    secao?: EnvelopeSection | null;
+    descontinuidade?: boolean;
+  } | null>(null);
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -479,13 +513,58 @@ export function Beam2DViewer({
     return points;
   };
 
-  const displayFactor = diagramaAtivo === 'momentoFletor' ? getMomentoDisplayFactor(resultadoProcessamento) : 1;
+  const displayFactor = modoEnvoltoria
+    ? (envelopeView?.displayFactor ?? 1)
+    : diagramaAtivo === 'momentoFletor'
+      ? getMomentoDisplayFactor(resultadoProcessamento)
+      : 1;
   const plotSignFactor = diagramaAtivo === 'momentoFletor' ? -1 : 1;
   const valueSignFactor = 1;
-  const unit = diagramaAtivo === 'esforcoCortante' ? 'kN' : 'kN*m';
-  const diagramVerticalScale = 42;
+  const unit = modoEnvoltoria
+    ? (envelopeView?.unit ?? (diagramaAtivo === 'esforcoCortante' ? 'kN' : 'kN*m'))
+    : diagramaAtivo === 'esforcoCortante'
+      ? 'kN'
+      : 'kN*m';
+  const diagramScaleY = Number.isFinite(escalaYDiagrama) && escalaYDiagrama > 0 ? escalaYDiagrama : 1;
+  const diagramVerticalScale = 42 * diagramScaleY;
   const formatValue = (valor: number) => `${(valor * displayFactor * valueSignFactor).toFixed(2)}`;
-  const diagramPoints = exibirDiagramas ? getDiagramPoints() : [];
+  const discontinuityXs = modoEnvoltoria
+    ? (envelopeView?.pontosDescontinuidade ?? [])
+    : getDiscontinuityXsFromResult(resultadoProcessamento);
+  const envelopePoints = modoEnvoltoria && envelopeView
+    ? [...envelopeView.envelopePositiva, ...envelopeView.envelopeNegativa].sort((a, b) => a.x - b.x)
+    : [];
+  const diagramPoints = exibirDiagramas
+    ? (modoEnvoltoria && envelopeView ? envelopePoints : getDiagramPoints())
+    : [];
+
+  const getSectionTolerance = (points: Array<{ x: number }>) => {
+    if (points.length < 2) return 1e-3;
+
+    let minDelta = Number.POSITIVE_INFINITY;
+    const sorted = [...points].sort((a, b) => a.x - b.x);
+    for (let i = 1; i < sorted.length; i++) {
+      const delta = Math.abs(sorted[i].x - sorted[i - 1].x);
+      if (delta > 1e-9) {
+        minDelta = Math.min(minDelta, delta);
+      }
+    }
+
+    if (!Number.isFinite(minDelta)) return 1e-3;
+    return Math.max(1e-6, minDelta / 2);
+  };
+
+  const getNearestEnvelopeSection = (sections: EnvelopeSection[], worldX: number) => {
+    if (sections.length === 0) return null;
+
+    const tolerance = getSectionTolerance(sections);
+    const inSection = sections.filter((section) => Math.abs(section.x - worldX) <= tolerance);
+    if (inSection.length === 0) return null;
+
+    return inSection.reduce((nearest, current) => (
+      Math.abs(current.x - worldX) < Math.abs(nearest.x - worldX) ? current : nearest
+    ));
+  };
 
   const handleDiagramMouseMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     if (!exibirDiagramas || diagramPoints.length < 2 || !svgRef.current) return;
@@ -504,12 +583,40 @@ export function Beam2DViewer({
     const maxAbs = Math.max(...diagramPoints.map((point) => Math.abs(point.valor)), 1);
     const pointY = beamY - ((nearestPoint.valor * plotSignFactor) / maxAbs) * diagramVerticalScale;
 
+    const secao = modoEnvoltoria && envelopeView
+      ? getNearestEnvelopeSection(envelopeView.secoes ?? [], nearestPoint.x)
+      : null;
+    const discontinuityTolerance = Math.max(1e-6, getSectionTolerance(diagramPoints));
+
     setDiagramHover({
       x: nearestPoint.x,
       valor: nearestPoint.valor,
       svgX: worldToSVG(nearestPoint.x),
       svgY: pointY,
+      secao,
+      descontinuidade: Boolean(
+        modoEnvoltoria
+        && envelopeView
+        && envelopeView.pontosDescontinuidade.some((x) => Math.abs(x - nearestPoint.x) <= discontinuityTolerance)
+      ),
     });
+  };
+
+  const formatEnvelopeBranch = (
+    branches: EnvelopeSection['ramosPositivos'] | EnvelopeSection['ramosNegativos'],
+    governante: string | null,
+    mode: 'positive' | 'negative',
+  ) => {
+    if (!branches || branches.length === 0) return 'n/a';
+
+    const valores = branches.flatMap((branch) => branch.valores);
+    if (valores.length === 0) return 'n/a';
+
+    const branchValue = mode === 'positive' ? Math.max(...valores) : Math.min(...valores);
+    const curvas = branches.map((branch) => branch.curvaId).join(', ');
+    const governanteTxt = governante ?? 'n/a';
+
+    return `${formatValue(branchValue)} ${unit} (gov: ${governanteTxt}; curvas: ${curvas})`;
   };
 
 
@@ -805,6 +912,15 @@ export function Beam2DViewer({
 
             return isAboveBeam ? pointY - preferredGap : pointY + preferredGap;
           };
+          const getHorizontalLabelOffset = (index: number, total: number) => {
+            if (total <= 1) return 0;
+            return (index - (total - 1) / 2) * 26;
+          };
+          const getTextAnchorForOffset = (offset: number): 'start' | 'middle' | 'end' => {
+            if (offset < 0) return 'end';
+            if (offset > 0) return 'start';
+            return 'middle';
+          };
 
           const nodePositions = Array.from(
             new Set(vigas.flatMap((viga) => [viga.startPosition, viga.endPosition]))
@@ -853,17 +969,22 @@ export function Beam2DViewer({
               x: nodeX,
               valor: point.valor,
               y: toDiagramY(point.valor),
+              labelOffsetX: getHorizontalLabelOffset(pointIndex, uniquePoints.length),
             }));
           });
           const isPointOnNode = (point: PontoDiagrama) => nodeAnnotations.some(
             (node) => Math.abs(node.x - point.x) < tolerance && Math.abs(node.valor - point.valor) < tolerance
           );
+          const pointsForSpanPositiveEnvelope = modoEnvoltoria && envelopeView
+            ? envelopeView.envelopePositiva
+            : null;
+
           const localPositiveMaxPoints = diagramaAtivo === 'momentoFletor'
             ? vigas
                 .flatMap((viga) => {
                   const vigaMin = Math.min(viga.startPosition, viga.endPosition);
                   const vigaMax = Math.max(viga.startPosition, viga.endPosition);
-                  const spanPoints = points.filter(
+                  const spanPoints = (pointsForSpanPositiveEnvelope ?? points).filter(
                     (point) => point.x >= vigaMin - tolerance && point.x <= vigaMax + tolerance
                   );
 
@@ -898,6 +1019,102 @@ export function Beam2DViewer({
             .map((point) => `${worldToSVG(point.x)},${toDiagramY(point.valor)}`)
             .join(' ');
 
+          const envelopeBases = envelopeView?.bases ?? [
+            { id: 'segundoGenero', label: 'Segundo genero', points: envelopeView?.baseSegundoGenero ?? [] },
+            { id: 'engastado', label: 'Engastado', points: envelopeView?.baseEngastado ?? [] },
+          ];
+          const envelopePositiva = envelopeView?.envelopePositiva ?? [];
+          const envelopeNegativa = envelopeView?.envelopeNegativa ?? [];
+          const toPolyline = (branch: Array<{ x: number; valor: number }>) => branch
+            .map((point) => `${worldToSVG(point.x)},${toDiagramY(point.valor)}`)
+            .join(' ');
+          const splitByDiscontinuity = (branch: Array<{ x: number; valor: number }>) => {
+            if (discontinuityXs.length === 0 || branch.length < 2) {
+              return [branch];
+            }
+
+            const sorted = [...branch].sort((a, b) => a.x - b.x);
+            const toleranceDisc = 1e-6;
+            const segments: Array<Array<{ x: number; valor: number }>> = [];
+            let currentSegment: Array<{ x: number; valor: number }> = [sorted[0]];
+
+            for (let i = 1; i < sorted.length; i++) {
+              const prev = sorted[i - 1];
+              const curr = sorted[i];
+              const hasBreak = discontinuityXs.some((d) => (
+                prev.x + toleranceDisc < d && d < curr.x - toleranceDisc
+              ));
+
+              if (hasBreak && currentSegment.length >= 2) {
+                segments.push(currentSegment);
+                currentSegment = [curr];
+                continue;
+              }
+
+              currentSegment.push(curr);
+            }
+
+            if (currentSegment.length >= 2) {
+              segments.push(currentSegment);
+            }
+
+            return segments.length > 0 ? segments : [sorted];
+          };
+          const buildEnvelopeSegmentsFromSections = (branchType: 'positive' | 'negative') => {
+            const sections = (envelopeView?.secoes ?? []).slice().sort((a, b) => a.x - b.x);
+            if (sections.length === 0) {
+              return branchType === 'positive'
+                ? splitByDiscontinuity(envelopePositiva)
+                : splitByDiscontinuity(envelopeNegativa);
+            }
+
+            const getSectionValue = (section: EnvelopeSection) => {
+              const source = branchType === 'positive' ? section.ramosPositivos : section.ramosNegativos;
+              const values = source.flatMap((branch) => branch.valores);
+              if (values.length === 0) return null;
+              return branchType === 'positive' ? Math.max(...values) : Math.min(...values);
+            };
+
+            const toleranceDisc = Math.max(1e-6, getSectionTolerance(sections));
+            const segments: Array<Array<{ x: number; valor: number }>> = [];
+            let current: Array<{ x: number; valor: number }> = [];
+            let prevX: number | null = null;
+
+            const flush = () => {
+              if (current.length >= 2) {
+                segments.push(current);
+              }
+              current = [];
+            };
+
+            sections.forEach((section) => {
+              const value = getSectionValue(section);
+              if (value === null) {
+                flush();
+                prevX = null;
+                return;
+              }
+
+              const prevXValue = prevX;
+              const hasBreak = prevXValue !== null && discontinuityXs.some((d) => (
+                prevXValue + toleranceDisc < d && d < section.x - toleranceDisc
+              ));
+
+              if (hasBreak) {
+                flush();
+              }
+
+              current.push({ x: section.x, valor: value });
+              prevX = section.x;
+            });
+
+            flush();
+            return segments;
+          };
+          const envelopePositivaSegments = buildEnvelopeSegmentsFromSections('positive');
+          const envelopeNegativaSegments = buildEnvelopeSegmentsFromSections('negative');
+          const dashedBaseColors = ['#60a5fa', '#f59e0b', '#22c55e', '#a855f7', '#06b6d4', '#f97316'];
+
           return (
             <g key={diagramaConfig.key}>
               <line
@@ -910,12 +1127,54 @@ export function Beam2DViewer({
                 strokeDasharray="4,4"
                 opacity="0.55"
               />
-              <polyline
-                points={polylinePoints}
-                fill="none"
-                stroke={diagramaConfig.cor}
-                strokeWidth="2.5"
-              />
+              {!modoEnvoltoria && (
+                <>
+                  {splitByDiscontinuity(points).map((segment, segmentIndex) => (
+                    <polyline
+                      key={`diag-${segmentIndex}`}
+                      points={toPolyline(segment)}
+                      fill="none"
+                      stroke={diagramaConfig.cor}
+                      strokeWidth="2.5"
+                    />
+                  ))}
+                </>
+              )}
+              {modoEnvoltoria && envelopeView && (
+                <>
+                  {envelopeBases.map((base, index) => (
+                    splitByDiscontinuity(base.points).map((segment, segmentIndex) => (
+                      <polyline
+                        key={`base-${base.id}-${segmentIndex}`}
+                        points={toPolyline(segment)}
+                        fill="none"
+                        stroke={dashedBaseColors[index % dashedBaseColors.length]}
+                        strokeWidth="1.5"
+                        opacity="0.55"
+                        strokeDasharray="4,3"
+                      />
+                    ))
+                  ))}
+                  {envelopePositivaSegments.map((segment, segmentIndex) => (
+                    <polyline
+                      key={`env-pos-${segmentIndex}`}
+                      points={toPolyline(segment)}
+                      fill="none"
+                      stroke="#16a34a"
+                      strokeWidth="2.5"
+                    />
+                  ))}
+                  {envelopeNegativaSegments.map((segment, segmentIndex) => (
+                    <polyline
+                      key={`env-neg-${segmentIndex}`}
+                      points={toPolyline(segment)}
+                      fill="none"
+                      stroke="#dc2626"
+                      strokeWidth="2.5"
+                    />
+                  ))}
+                </>
+              )}
 
               {nodeAnnotations.map((node) => (
                 <g key={node.key}>
@@ -925,10 +1184,22 @@ export function Beam2DViewer({
                     r="3"
                     fill={diagramaConfig.cor}
                   />
+                  {node.labelOffsetX !== 0 && (
+                    <line
+                      x1={worldToSVG(node.x)}
+                      y1={node.y}
+                      x2={worldToSVG(node.x) + node.labelOffsetX}
+                      y2={getLabelY(node.y, 10)}
+                      stroke={diagramaConfig.cor}
+                      strokeWidth="1"
+                      strokeDasharray="3,2"
+                      opacity="0.8"
+                    />
+                  )}
                   <text
-                    x={worldToSVG(node.x)}
+                    x={worldToSVG(node.x) + node.labelOffsetX}
                     y={getLabelY(node.y, 10)}
-                    textAnchor="middle"
+                    textAnchor={getTextAnchorForOffset(node.labelOffsetX)}
                     fontSize="10"
                     fill={diagramaConfig.cor}
                     fontWeight="700"
@@ -1036,22 +1307,55 @@ export function Beam2DViewer({
               fill="#0f172a"
             />
             <rect
-              x={Math.min(diagramHover.svgX + 10, dimensions.width - 210)}
-              y={Math.max(20, diagramHover.svgY - 38)}
-              width="200"
-              height="32"
+              x={Math.min(diagramHover.svgX + 10, dimensions.width - (modoEnvoltoria ? 496 : 210))}
+              y={Math.max(20, diagramHover.svgY - (modoEnvoltoria ? 58 : 38))}
+              width={modoEnvoltoria ? '486' : '200'}
+              height={modoEnvoltoria ? '56' : '32'}
               rx="6"
               fill="rgba(15, 23, 42, 0.9)"
             />
             <text
-              x={Math.min(diagramHover.svgX + 18, dimensions.width - 202)}
-              y={Math.max(40, diagramHover.svgY - 18)}
+              x={Math.min(diagramHover.svgX + 18, dimensions.width - (modoEnvoltoria ? 488 : 202))}
+              y={Math.max(40, diagramHover.svgY - (modoEnvoltoria ? 38 : 18))}
               fontSize="11"
               fill="#f8fafc"
               fontWeight="600"
             >
-              x: {diagramHover.x.toFixed(2)} cm | {diagramaConfig.label}: {formatValue(diagramHover.valor)} {unit}
+              x: {diagramHover.x.toFixed(2)} cm
             </text>
+            {!modoEnvoltoria && (
+              <text
+                x={Math.min(diagramHover.svgX + 18, dimensions.width - 202)}
+                y={Math.max(54, diagramHover.svgY - 4)}
+                fontSize="11"
+                fill="#f8fafc"
+                fontWeight="600"
+              >
+                {diagramaConfig.label}: {formatValue(diagramHover.valor)} {unit}
+              </text>
+            )}
+            {modoEnvoltoria && (
+              <>
+                <text
+                  x={Math.min(diagramHover.svgX + 18, dimensions.width - 488)}
+                  y={Math.max(54, diagramHover.svgY - 24)}
+                  fontSize="11"
+                  fill="#86efac"
+                  fontWeight="600"
+                >
+                  Env+: {formatEnvelopeBranch(diagramHover.secao?.ramosPositivos ?? [], diagramHover.secao?.governantePositivo ?? null, 'positive')}
+                </text>
+                <text
+                  x={Math.min(diagramHover.svgX + 18, dimensions.width - 488)}
+                  y={Math.max(68, diagramHover.svgY - 10)}
+                  fontSize="11"
+                  fill="#fca5a5"
+                  fontWeight="600"
+                >
+                  Env-: {formatEnvelopeBranch(diagramHover.secao?.ramosNegativos ?? [], diagramHover.secao?.governanteNegativo ?? null, 'negative')}{diagramHover.descontinuidade ? ' | descontinuidade' : ''}
+                </text>
+              </>
+            )}
           </g>
         )}
 

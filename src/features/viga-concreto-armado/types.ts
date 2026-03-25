@@ -33,11 +33,51 @@ export interface CarregamentoDistribuido {
 
 export type TipoDiagrama = 'esforcoCortante' | 'momentoFletor';
 export type TipoModeloApoioIntermediario = 'segundoGenero' | 'engastado';
+
 export type SelecaoDiagramaViga =
   | 'cortante-segundo-genero'
   | 'momento-segundo-genero'
   | 'cortante-engastado'
-  | 'momento-engastado';
+  | 'momento-engastado'
+  | 'cortante-envoltoria'
+  | 'momento-envoltoria';
+
+export type ModeloGovernante = string;
+
+export interface EnvelopeDiagramPoint {
+  x: number;
+  valor: number;
+  modeloGovernante: ModeloGovernante;
+}
+
+export interface EnvelopeSectionBranch {
+  curvaId: string;
+  valores: number[];
+}
+
+export interface EnvelopeSection {
+  x: number;
+  ramosPositivos: EnvelopeSectionBranch[];
+  ramosNegativos: EnvelopeSectionBranch[];
+  governantePositivo: ModeloGovernante | null;
+  governanteNegativo: ModeloGovernante | null;
+}
+
+export interface EnvelopeDiagramView {
+  bases?: Array<{
+    id: string;
+    label: string;
+    points: Array<{ x: number; valor: number }>;
+  }>;
+  baseSegundoGenero: EnvelopeDiagramPoint[];
+  baseEngastado: EnvelopeDiagramPoint[];
+  envelopePositiva: EnvelopeDiagramPoint[];
+  envelopeNegativa: EnvelopeDiagramPoint[];
+  secoes?: EnvelopeSection[];
+  pontosDescontinuidade: number[];
+  unit: string;
+  displayFactor: number;
+}
 
 export interface ResultadosProcessamentoViga {
   segundoGenero: unknown | null;
