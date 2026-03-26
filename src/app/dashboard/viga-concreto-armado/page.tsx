@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useVigaConcretoArmado } from '@/features/viga-concreto-armado/context/viga-concreto-armado-provider';
-import { DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA, type CarregamentoDistribuido, type CarregamentoPontual, type CategoriaCarregamentoDistribuido, type EnvelopeDiagramView, type Pilar, type ResultadosProcessamentoViga, type SelecaoDiagramaViga, type TipoDiagrama, type TipoModeloApoioIntermediario, type Viga } from '@/features/viga-concreto-armado/types';
+import { DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA, type CarregamentoDistribuido, type CarregamentoPontual, type CategoriaCarregamentoDistribuido, type EnvelopeDiagramView, type Pilar, type SelecaoDiagramaViga, type TipoDiagrama, type TipoModeloApoioIntermediario, type Viga } from '@/features/viga-concreto-armado/types';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar, SidebarToggleButton, type MenuItem } from '../../../components/user/molecules/sidebar';
 import { Beam3DViewer } from '../../../components/user/molecules/beam-3d-viewer';
@@ -57,6 +57,7 @@ const OPCOES_DIAGRAMA_CONTINUO: OpcaoDiagrama[] = [
   { value: 'momento-engastado', label: 'Momento Fletor - Apoios engastados' },
   { value: 'cortante-envoltoria', label: 'Esforço Cortante - Envoltória' },
   { value: 'momento-envoltoria', label: 'Momento Fletor - Envoltória' },
+  { value: 'momento-envoltoria-deslocada', label: 'Momento Fletor - Envoltória Deslocada (a_l = 30 cm)' },
 ];
 
 const OPCOES_DIAGRAMA_SIMPLES: OpcaoDiagrama[] = [
@@ -71,11 +72,15 @@ function getTipoDiagramaFromSelecao(selecao: SelecaoDiagramaViga): TipoDiagrama 
 type ModeloDiagramaAtivo = TipoModeloApoioIntermediario | 'envoltoria';
 
 function getModeloFromSelecao(selecao: SelecaoDiagramaViga): ModeloDiagramaAtivo {
-  if (selecao.endsWith('envoltoria')) {
+  if (selecao.includes('envoltoria')) {
     return 'envoltoria';
   }
 
   return selecao.endsWith('engastado') ? 'engastado' : 'segundoGenero';
+}
+
+function isSelecaoEnvoltoriaDeslocada(selecao: SelecaoDiagramaViga): boolean {
+  return selecao === 'momento-envoltoria-deslocada';
 }
 
 function getSelecaoSemEngaste(selecao: SelecaoDiagramaViga): SelecaoDiagramaViga {
@@ -94,11 +99,95 @@ function getTituloDiagrama(selecao: SelecaoDiagramaViga, estruturaEhVigaContinua
   const modelo = getModeloFromSelecao(selecao);
   const sufixo = modelo === 'engastado'
     ? 'Apoios engastados'
-    : modelo === 'envoltoria'
-      ? 'Envoltória'
-      : 'Apoios de segundo gênero';
+    : isSelecaoEnvoltoriaDeslocada(selecao)
+      ? 'Envoltória deslocada (a_l = 30 cm)'
+      : modelo === 'envoltoria'
+        ? 'Envoltória'
+        : 'Apoios de segundo gênero';
 
   return `Diagrama ativo: ${prefixo} - ${sufixo}`;
+}
+
+
+function buildMomentEnvelopeDecalagemFallback(
+  baseMomento: EnvelopeDiagramView,
+  alCm = 30,
+  toleranciaX = 1e-6,
+): EnvelopeDiagramView | null {
+  const secoesBase = (baseMomento.secoes ?? []).slice().sort((a, b) => a.x - b.x);
+  if (secoesBase.length === 0) {
+    return null;
+  }
+
+  const extremos = secoesBase.map((secao) => {
+    const positivos = secao.ramosPositivos.flatMap((branch) => branch.valores);
+    const negativos = secao.ramosNegativos.flatMap((branch) => branch.valores);
+
+    return {
+      x: secao.x,
+      positivo: positivos.length > 0 ? Math.max(...positivos) : null,
+      negativo: negativos.length > 0 ? Math.min(...negativos) : null,
+      governantePositivo: secao.governantePositivo,
+      governanteNegativo: secao.governanteNegativo,
+    };
+  });
+
+  const envelopePositiva = [] as EnvelopeDiagramView['envelopePositiva'];
+  const envelopeNegativa = [] as EnvelopeDiagramView['envelopeNegativa'];
+  const secoesDeslocadas = [] as NonNullable<EnvelopeDiagramView['secoes']>;
+
+  for (const alvo of extremos) {
+    const janela = extremos.filter((candidato) => Math.abs(candidato.x - alvo.x) <= alCm + toleranciaX);
+
+    const candidatoPositivo = janela
+      .filter((candidato) => candidato.positivo !== null)
+      .reduce<typeof janela[number] | null>((melhor, atual) => {
+        if (!melhor) return atual;
+        return (atual.positivo as number) > (melhor.positivo as number) ? atual : melhor;
+      }, null);
+
+    const candidatoNegativo = janela
+      .filter((candidato) => candidato.negativo !== null)
+      .reduce<typeof janela[number] | null>((melhor, atual) => {
+        if (!melhor) return atual;
+        return (atual.negativo as number) < (melhor.negativo as number) ? atual : melhor;
+      }, null);
+
+    if (candidatoPositivo && candidatoPositivo.positivo !== null) {
+      envelopePositiva.push({
+        x: alvo.x,
+        valor: candidatoPositivo.positivo,
+        modeloGovernante: candidatoPositivo.governantePositivo ?? '',
+      });
+    }
+
+    if (candidatoNegativo && candidatoNegativo.negativo !== null) {
+      envelopeNegativa.push({
+        x: alvo.x,
+        valor: candidatoNegativo.negativo,
+        modeloGovernante: candidatoNegativo.governanteNegativo ?? '',
+      });
+    }
+
+    secoesDeslocadas.push({
+      x: alvo.x,
+      ramosPositivos: candidatoPositivo && candidatoPositivo.positivo !== null
+        ? [{ curvaId: 'decalagem', valores: [candidatoPositivo.positivo] }]
+        : [],
+      ramosNegativos: candidatoNegativo && candidatoNegativo.negativo !== null
+        ? [{ curvaId: 'decalagem', valores: [candidatoNegativo.negativo] }]
+        : [],
+      governantePositivo: candidatoPositivo?.governantePositivo ?? null,
+      governanteNegativo: candidatoNegativo?.governanteNegativo ?? null,
+    });
+  }
+
+  return {
+    ...baseMomento,
+    envelopePositiva,
+    envelopeNegativa,
+    secoes: secoesDeslocadas,
+  };
 }
 
 function classificarApoiosDaEstrutura(pilares: Pilar[], vigas: Viga[]): ClassificacaoApoios {
@@ -264,12 +353,37 @@ export default function FnsPage() {
     : getSelecaoSemEngaste(selecaoDiagrama);
   const diagramaAtivo = getTipoDiagramaFromSelecao(selecaoDiagramaEfetiva);
   const modeloDiagramaAtivo = getModeloFromSelecao(selecaoDiagramaEfetiva);
+  const envoltoriaDeslocadaAtiva = isSelecaoEnvoltoriaDeslocada(selecaoDiagramaEfetiva);
   const envelopeResult = useMemo(() => {
     if (!estruturaEhVigaContinua || modeloDiagramaAtivo !== 'envoltoria') {
       return { data: null, error: null as string | null };
     }
 
     if (envelopeFromApi) {
+      if (diagramaAtivo === 'momentoFletor' && envoltoriaDeslocadaAtiva) {
+        const baseMomento = envelopeFromApi.momentoFletor;
+        const decalagem = baseMomento.decalagem;
+
+        if (!decalagem) {
+          const fallback = buildMomentEnvelopeDecalagemFallback(baseMomento, 30, 1e-6);
+          if (fallback) {
+            return { data: fallback, error: null as string | null };
+          }
+
+          return { data: null, error: 'Envoltoria deslocada indisponivel na resposta da API.' };
+        }
+
+        return {
+          data: {
+            ...baseMomento,
+            envelopePositiva: decalagem.envelopePositivaDeslocada,
+            envelopeNegativa: decalagem.envelopeNegativaDeslocada,
+            secoes: decalagem.secoesDeslocadas,
+          },
+          error: null as string | null,
+        };
+      }
+
       return {
         data: diagramaAtivo === 'esforcoCortante'
           ? envelopeFromApi.esforcoCortante
@@ -283,7 +397,7 @@ export default function FnsPage() {
     }
 
     return { data: null, error: 'Envoltória da API indisponível para esta configuração.' };
-  }, [diagramaAtivo, envelopeFromApi, estruturaEhVigaContinua, modeloDiagramaAtivo, resultadosProcessamento.engastado, resultadosProcessamento.segundoGenero]);
+  }, [diagramaAtivo, envelopeFromApi, envoltoriaDeslocadaAtiva, estruturaEhVigaContinua, modeloDiagramaAtivo, resultadosProcessamento.engastado, resultadosProcessamento.segundoGenero]);
 
   const resultadoProcessamentoAtivo = estruturaEhVigaContinua
     ? (modeloDiagramaAtivo === 'envoltoria' ? null : resultadosProcessamento[modeloDiagramaAtivo])
@@ -1512,7 +1626,7 @@ export default function FnsPage() {
                           </div>
                         </div>
                       ) : (
-                        <span className="text-xs text-muted-foreground">Ative "Mostrar diagramas" para configurar diagrama e escala.</span>
+                        <span className="text-xs text-muted-foreground">Ative &quot;Mostrar diagramas&quot; para configurar diagrama e escala.</span>
                       )}
                     </div>
                   </div>

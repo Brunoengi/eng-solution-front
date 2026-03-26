@@ -357,7 +357,7 @@ export function Beam3DViewer({
       2000
     );
     
-    // Calcular limites da estrutura para posicionar câmera
+    // Calcular limites da estrutura para posicionar camera
     const { centerX, maxHeight, structureSize, minPos, maxPos } = getViewMetrics();
     const initialDistance = Math.max(structureSize * 0.95, maxHeight * 5, 220);
     const dynamicMaxDistance = Math.max(1000, structureSize * 12, initialDistance * 8);
@@ -459,7 +459,7 @@ export function Beam3DViewer({
     });
 
     pilares.forEach((pilar) => {
-      const pilarHeight = maxHeight * 1.5; // Altura proporcional à maior viga
+      const pilarHeight = maxHeight * 1.5; // Altura proporcional a maior viga
       const columnGeometry = new THREE.BoxGeometry(pilar.width, pilarHeight, pilar.width);
       const column = new THREE.Mesh(columnGeometry, columnMaterial);
       column.position.set(pilar.position, -maxHeight * 0.25, 0);
@@ -489,7 +489,7 @@ export function Beam3DViewer({
       { hex: 0x00bcd4, rgb: '#00bcd4' }, // Ciano
       { hex: 0xffeb3b, rgb: '#ffeb3b' }, // Amarelo
       { hex: 0xe91e63, rgb: '#e91e63' }, // Rosa
-      { hex: 0x3f51b5, rgb: '#3f51b5' }, // Índigo
+      { hex: 0x3f51b5, rgb: '#3f51b5' }, // Indigo
       { hex: 0x009688, rgb: '#009688' }, // Teal
       { hex: 0xff5252, rgb: '#ff5252' }, // Vermelho
       { hex: 0x448aff, rgb: '#448aff' }, // Azul claro
@@ -499,7 +499,7 @@ export function Beam3DViewer({
       return colorPalette[index % colorPalette.length];
     };
 
-    // Função auxiliar para criar sprite de texto
+    // Funcao auxiliar para criar sprite de texto
     const createTextSprite = (text: string, color: string, size: number) => {
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
@@ -600,7 +600,7 @@ export function Beam3DViewer({
         }
       });
 
-      // Renderizar Carregamentos Distribuídos
+      // Renderizar Carregamentos Distribuidos
       carregamentosDistribuidos.forEach((carga, index) => {
         const isDown = carga.magnitude < 0;
         const distLength = Math.abs(carga.endPosition - carga.startPosition);
@@ -870,11 +870,13 @@ export function Beam3DViewer({
         }
       } else {
         const maxAbs = Math.max(...points.map((point) => Math.abs(point.valor)), 1);
+        const zeroTolerance = Math.max(1e-6, maxAbs * 1e-6);
+        const normalizeNearZero = (value: number) => (Math.abs(value) <= zeroTolerance ? 0 : value);
         const zOffset = maxHeight * 0.4;
         const plotSignFactor = diagramaAtivo === 'momentoFletor' ? -1 : 1;
         const valueSignFactor = 1;
         const diagramScaleY = Number.isFinite(escalaYDiagrama) && escalaYDiagrama > 0 ? escalaYDiagrama : 1;
-        const toDiagramY = (valor: number) => ((valor * plotSignFactor) / maxAbs) * (maxHeight * 1.35 * diagramScaleY);
+        const toDiagramY = (valor: number) => ((normalizeNearZero(valor) * plotSignFactor) / maxAbs) * (maxHeight * 1.35 * diagramScaleY);
         const beamHalfHeight = maxHeight / 2;
         const minimumClearance = maxHeight * 0.35;
         const labelOffsetWorld = Math.max(32, Math.min(56, Math.abs(maxPos - minPos) * 0.08));
@@ -986,16 +988,26 @@ export function Beam3DViewer({
         const buildEnvelopeSegmentsFromSections = (branchType: 'positive' | 'negative') => {
           const sections = (envelopeView?.secoes ?? []).slice().sort((a, b) => a.x - b.x);
           if (sections.length === 0) {
-            return branchType === 'positive'
-              ? splitByDiscontinuity(envelopeView?.envelopePositiva ?? [])
-              : splitByDiscontinuity(envelopeView?.envelopeNegativa ?? []);
+            const rawBranch = branchType === 'positive'
+              ? (envelopeView?.envelopePositiva ?? [])
+              : (envelopeView?.envelopeNegativa ?? []);
+            const filteredBranch = rawBranch
+              .map((point) => ({ x: point.x, valor: normalizeNearZero(point.valor) }))
+              .filter((point) => (branchType === 'positive' ? point.valor > 0 : point.valor < 0));
+
+            return splitByDiscontinuity(filteredBranch);
           }
 
           const getSectionValue = (section: EnvelopeSection) => {
             const source = branchType === 'positive' ? section.ramosPositivos : section.ramosNegativos;
-            const values = source.flatMap((branch) => branch.valores);
+            const values = source.flatMap((branch) => branch.valores).map((value) => normalizeNearZero(value));
             if (values.length === 0) return null;
-            return branchType === 'positive' ? Math.max(...values) : Math.min(...values);
+
+            const branchValue = branchType === 'positive' ? Math.max(...values) : Math.min(...values);
+            if (branchType === 'positive' && branchValue <= 0) return null;
+            if (branchType === 'negative' && branchValue >= 0) return null;
+
+            return branchValue;
           };
 
           const getSectionTolerance = (entries: Array<{ x: number }>) => {
@@ -1166,7 +1178,10 @@ export function Beam3DViewer({
 
           const uniquePoints = candidatePoints
             .filter((point, index, allPoints) => (
-              allPoints.findIndex((candidate) => Math.abs(candidate.valor - point.valor) < tolerance) === index
+              allPoints.findIndex((candidate) => (
+                Math.abs(candidate.valor - point.valor) < tolerance
+                || formatValue(candidate.valor) === formatValue(point.valor)
+              )) === index
             ));
 
           return uniquePoints.map((point, index) => ({
@@ -1178,17 +1193,76 @@ export function Beam3DViewer({
               labelOffsetX: getHorizontalLabelOffset(index, uniquePoints.length),
             }));
         });
+        const showOnlyMomentMaxPointsOnShiftedEnvelope = isEnvelopeMode && diagramaAtivo === 'momentoFletor';
         const isPointOnNode = (point: PontoDiagrama) => nodePoints.some(
           (node) => Math.abs(node.x - point.x) < tolerance && Math.abs(node.valor - point.valor) < tolerance
         );
+        const labelXProximityTolerance = Math.max(1, Math.abs(maxPos - minPos) * 0.01);
+        const isRedundantLabelPoint = (point: PontoDiagrama) => nodePoints.some((node) => (
+          Math.abs(node.x - point.x) <= labelXProximityTolerance
+          && formatValue(node.valor) === formatValue(point.valor)
+        ));
+        const placedLabels: Array<{ x: number; text: string }> = [];
+        const labelDedupXTolerance = Math.max(labelXProximityTolerance, Math.abs(maxPos - minPos) * 0.02);
+        const shouldPlaceLabel = (x: number, text: string) => !placedLabels.some((label) => (
+          Math.abs(label.x - x) <= labelDedupXTolerance && label.text === text
+        ));
+        const registerLabel = (x: number, text: string) => {
+          placedLabels.push({ x, text });
+        };
 
-        nodePoints.forEach((point) => {
+        const globalMaxValue = points.reduce((best, current) => (
+          (current.valor * valueSignFactor) > (best.valor * valueSignFactor) ? current : best
+        ), points[0]).valor;
+        const globalMinValue = points.reduce((best, current) => (
+          (current.valor * valueSignFactor) < (best.valor * valueSignFactor) ? current : best
+        ), points[0]).valor;
+        const globalMaxLabelText = `${formatValue(globalMaxValue)} ${unit}`;
+        const globalMinLabelText = `${formatValue(globalMinValue)} ${unit}`;
+        const preferredNodeXByLabel = new Map<string, number>();
+
+        [globalMinLabelText, globalMaxLabelText].forEach((labelText) => {
+          const candidates = nodePoints.filter(
+            (node) => `${formatValue(node.valor)} ${unit}` === labelText
+          );
+
+          if (candidates.length === 0) {
+            return;
+          }
+
+          const preferred = candidates.reduce((best, current) => (
+            Math.abs(current.x - centerX) < Math.abs(best.x - centerX) ? current : best
+          ));
+
+          preferredNodeXByLabel.set(labelText, preferred.x);
+        });
+
+        if (!showOnlyMomentMaxPointsOnShiftedEnvelope) {
+          nodePoints.forEach((point) => {
           const y = toDiagramY(point.valor);
           const labelX = point.x + point.labelOffsetX;
           const labelY = getLabelY(y, maxHeight * 0.28) + getVerticalLabelOffset(point.siblingIndex, point.siblingCount);
+          const isMomento = diagramaAtivo === 'momentoFletor';
+          const pointColorHex = isMomento
+            ? (point.valor < 0 ? 0xdc2626 : point.valor > 0 ? 0x16a34a : diagramaConfig.cor)
+            : diagramaConfig.cor;
+          const pointColorCss = isMomento
+            ? (point.valor < 0 ? '#dc2626' : point.valor > 0 ? '#16a34a' : `#${diagramaConfig.cor.toString(16).padStart(6, '0')}`)
+            : `#${diagramaConfig.cor.toString(16).padStart(6, '0')}`;
+
+          const nodeLabelText = `${formatValue(point.valor)} ${unit}`;
+          if (
+            diagramaAtivo === 'momentoFletor'
+            && (nodeLabelText === globalMinLabelText || nodeLabelText === globalMaxLabelText)
+          ) {
+            const preferredX = preferredNodeXByLabel.get(nodeLabelText);
+            if (preferredX === undefined || Math.abs(point.x - preferredX) > tolerance) {
+              return;
+            }
+          }
 
           const markerGeometry = new THREE.SphereGeometry(maxHeight * 0.05, 10, 10);
-          const markerMaterial = new THREE.MeshStandardMaterial({ color: diagramaConfig.cor });
+          const markerMaterial = new THREE.MeshStandardMaterial({ color: pointColorHex });
           const marker = new THREE.Mesh(markerGeometry, markerMaterial);
           marker.position.set(point.x, y, zOffset);
           scene.add(marker);
@@ -1199,7 +1273,7 @@ export function Beam3DViewer({
               new THREE.Vector3(labelX, labelY, zOffset),
             ]);
             const connectorMaterial = new THREE.LineDashedMaterial({
-              color: diagramaConfig.cor,
+              color: pointColorHex,
               dashSize: 3,
               gapSize: 2,
               linewidth: 1,
@@ -1211,20 +1285,35 @@ export function Beam3DViewer({
             scene.add(connector);
           }
 
-          const nodeLabel = createTextSprite(`${formatValue(point.valor)} ${unit}`, `#${diagramaConfig.cor.toString(16).padStart(6, '0')}`, 38);
-          if (nodeLabel) {
+          const nodeLabel = createTextSprite(nodeLabelText, pointColorCss, 38);
+          if (nodeLabel && shouldPlaceLabel(labelX, nodeLabelText)) {
             nodeLabel.position.set(labelX, labelY, zOffset);
             nodeLabel.renderOrder = 999;
             scene.add(nodeLabel);
+            registerLabel(labelX, nodeLabelText);
           }
-        });
+          });
+        }
 
-        const maxPoint = points.reduce((best, current) => (
-          (current.valor * valueSignFactor) > (best.valor * valueSignFactor) ? current : best
-        ), points[0]);
-        const minPoint = points.reduce((best, current) => (
-          (current.valor * valueSignFactor) < (best.valor * valueSignFactor) ? current : best
-        ), points[0]);
+        const getExtremePointClosestToCenter = (mode: 'max' | 'min') => {
+          const extreme = points.reduce((best, current) => {
+            const bestValue = best.valor * valueSignFactor;
+            const currentValue = current.valor * valueSignFactor;
+            return mode === 'max'
+              ? (currentValue > bestValue ? current : best)
+              : (currentValue < bestValue ? current : best);
+          }, points[0]);
+
+          const extremeFormatted = formatValue(extreme.valor);
+          const candidates = points.filter((point) => formatValue(point.valor) === extremeFormatted);
+
+          return candidates.reduce((best, current) => (
+            Math.abs(current.x - centerX) < Math.abs(best.x - centerX) ? current : best
+          ), extreme);
+        };
+
+        const maxPoint = getExtremePointClosestToCenter('max');
+        const minPoint = getExtremePointClosestToCenter('min');
         const positivePointsForSpan = isEnvelopeMode && envelopeView
           ? envelopeView.envelopePositiva
           : points;
@@ -1241,19 +1330,28 @@ export function Beam3DViewer({
                   return [];
                 }
 
-                const maxPositivePoint = spanPoints.reduce<PontoDiagrama | null>((best, current) => {
-                  if (current.valor <= 0) {
-                    return best;
-                  }
+                const spanCenter = (vigaMin + vigaMax) / 2;
+                const positiveSpanPoints = spanPoints.filter((point) => point.valor > zeroTolerance);
 
-                  if (!best || current.valor > best.valor) {
-                    return current;
-                  }
+                if (positiveSpanPoints.length === 0) {
+                  return [];
+                }
 
-                  return best;
-                }, null);
+                const maxPositiveValue = Math.max(...positiveSpanPoints.map((point) => point.valor));
+                const maxPositiveFormatted = formatValue(maxPositiveValue);
+                const maxPositiveCandidates = positiveSpanPoints.filter(
+                  (point) => formatValue(point.valor) === maxPositiveFormatted
+                );
 
-                if (!maxPositivePoint || isPointOnNode(maxPositivePoint) || samePoint(maxPositivePoint, maxPoint)) {
+                const maxPositivePoint = maxPositiveCandidates.reduce((best, current) => (
+                  Math.abs(current.x - spanCenter) < Math.abs(best.x - spanCenter) ? current : best
+                ));
+
+                if (
+                  !maxPositivePoint
+                  || isPointOnNode(maxPositivePoint)
+                  || (!showOnlyMomentMaxPointsOnShiftedEnvelope && samePoint(maxPositivePoint, maxPoint))
+                ) {
                   return [];
                 }
 
@@ -1263,8 +1361,42 @@ export function Beam3DViewer({
                 allPoints.findIndex((candidate) => samePoint(candidate, point)) === index
               ))
           : [];
+        const localMomentMaxPoints = diagramaAtivo === 'momentoFletor'
+          ? nodePositions
+              .slice(1, -1)
+              .flatMap((nodeX) => {
+                const exactPoints = points.filter((point) => Math.abs(point.x - nodeX) < tolerance);
+                const candidatePoints = exactPoints.length > 0
+                  ? exactPoints
+                  : [
+                      getClosestPointToNode(nodeX, 'left'),
+                      getClosestPointToNode(nodeX, 'right'),
+                    ].filter((point): point is PontoDiagrama => point !== null);
 
-        if (!isPointOnNode(maxPoint)) {
+                if (candidatePoints.length === 0) {
+                  return [];
+                }
+
+                const minNegativeAtNode = candidatePoints
+                  .filter((point) => point.valor < -zeroTolerance)
+                  .reduce<PontoDiagrama | null>((best, current) => {
+                    if (!best || current.valor < best.valor) {
+                      return current;
+                    }
+                    return best;
+                  }, null);
+
+                if (!minNegativeAtNode) {
+                  return [];
+                }
+
+                return [{ x: nodeX, valor: minNegativeAtNode.valor } satisfies PontoDiagrama];
+              })
+              .filter((point, index, allPoints) => (
+                allPoints.findIndex((candidate) => samePoint(candidate, point)) === index
+              ))
+          : [];
+        if (!showOnlyMomentMaxPointsOnShiftedEnvelope && !isPointOnNode(maxPoint) && !isRedundantLabelPoint(maxPoint)) {
           const maxMarker = new THREE.Mesh(
             new THREE.SphereGeometry(maxHeight * 0.06, 12, 12),
             new THREE.MeshStandardMaterial({ color: 0x16a34a })
@@ -1280,7 +1412,7 @@ export function Beam3DViewer({
           }
         }
 
-        if (!isPointOnNode(minPoint)) {
+        if (!showOnlyMomentMaxPointsOnShiftedEnvelope && !isPointOnNode(minPoint) && !isRedundantLabelPoint(minPoint)) {
           const minMarker = new THREE.Mesh(
             new THREE.SphereGeometry(maxHeight * 0.06, 12, 12),
             new THREE.MeshStandardMaterial({ color: 0xdc2626 })
@@ -1296,15 +1428,29 @@ export function Beam3DViewer({
           }
         }
 
-        localPositiveMaxPoints.forEach((point) => {
+        const shiftedEnvelopeHighlightPoints = [
+          ...localPositiveMaxPoints.filter((point) => !isRedundantLabelPoint(point)),
+          ...localMomentMaxPoints,
+        ].filter((point, index, allPoints) => (
+          allPoints.findIndex((candidate) => samePoint(candidate, point)) === index
+        ));
+
+        const highlightedMaxPoints = showOnlyMomentMaxPointsOnShiftedEnvelope
+          ? shiftedEnvelopeHighlightPoints
+          : localPositiveMaxPoints.filter((point) => !isRedundantLabelPoint(point));
+
+        highlightedMaxPoints.forEach((point) => {
+          const pointColorHex = point.valor < 0 ? 0xdc2626 : 0x16a34a;
+          const pointColorCss = point.valor < 0 ? '#dc2626' : '#16a34a';
+
           const localMaxMarker = new THREE.Mesh(
             new THREE.SphereGeometry(maxHeight * 0.05, 10, 10),
-            new THREE.MeshStandardMaterial({ color: 0x16a34a })
+            new THREE.MeshStandardMaterial({ color: pointColorHex })
           );
           localMaxMarker.position.set(point.x, toDiagramY(point.valor), zOffset);
           scene.add(localMaxMarker);
 
-          const localMaxLabel = createTextSprite(`${formatValue(point.valor)} ${unit}`, '#16a34a', 34);
+          const localMaxLabel = createTextSprite(`${formatValue(point.valor)} ${unit}`, pointColorCss, 34);
           if (localMaxLabel) {
             localMaxLabel.position.set(point.x, getLabelY(toDiagramY(point.valor), maxHeight * 0.18), zOffset);
             localMaxLabel.renderOrder = 999;
@@ -1458,14 +1604,14 @@ export function Beam3DViewer({
         if (object.userData.type === 'beam') {
           setTooltip({
             visible: true,
-            text: `${object.userData.id} - b: ${object.userData.width} cm, h: ${object.userData.height} cm, vão teórico: ${object.userData.length} cm`,
+            text: `${object.userData.id} - b: ${object.userData.width} cm, h: ${object.userData.height} cm, vao teorico: ${object.userData.length} cm`,
             x: event.clientX - rect.left,
             y: event.clientY - rect.top
           });
         } else if (object.userData.type === 'column') {
           setTooltip({
             visible: true,
-            text: `${object.userData.id}: ${object.userData.width} × ${object.userData.width} cm`,
+            text: `${object.userData.id}: ${object.userData.width} x ${object.userData.width} cm`,
             x: event.clientX - rect.left,
             y: event.clientY - rect.top
           });
@@ -1481,11 +1627,11 @@ export function Beam3DViewer({
 
     // Grid Helper
     // Calcular a cota inferior dos pilares
-    // Pilar: altura = maxHeight * 1.5, posição Y = -maxHeight * 0.25
-    // Cota inferior = posição Y - (altura / 2) = -maxHeight * 0.25 - maxHeight * 0.75 = -maxHeight * 1.0
+    // Pilar: altura = maxHeight * 1.5, posicao Y = -maxHeight * 0.25
+    // Cota inferior = posicao Y - (altura / 2) = -maxHeight * 0.25 - maxHeight * 0.75 = -maxHeight * 1.0
     const pilarBaseY = -maxHeight * 1.0;
     
-    // Aumentar a extensão do grid no eixo X para cobrir mais área
+    // Aumentar a extensao do grid no eixo X para cobrir mais area
     const structureWidth = maxPos - minPos;
     const gridSize = Math.max(structureWidth * 2.5, structureSize * 5, 500);
     const gridHelper = new THREE.GridHelper(gridSize, 40, 0xcccccc, 0xe0e0e0);
@@ -1692,7 +1838,7 @@ export function Beam3DViewer({
       <div className="absolute top-4 left-4 flex flex-col gap-2 bg-background/80 backdrop-blur-sm p-2 rounded-lg border shadow-lg z-50 pointer-events-auto">
         {/* View Controls */}
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-semibold text-muted-foreground px-2 mb-1">Visualização</span>
+          <span className="text-xs font-semibold text-muted-foreground px-2 mb-1">Visualizacao</span>
           <Button 
             variant="outline" 
             size="sm" 
@@ -1700,7 +1846,7 @@ export function Beam3DViewer({
             className="justify-start gap-2 h-8"
           >
             <Box className="h-3 w-3" />
-            <span className="text-xs">Isométrica</span>
+            <span className="text-xs">Isometrica</span>
           </Button>
           <Button 
             variant="outline" 
@@ -1779,7 +1925,7 @@ export function Beam3DViewer({
           <Maximize2 className="h-3 w-3" />
           <span>Arraste para rotacionar</span>
           <span>Scroll para zoom</span>
-          <span>Botão direito para mover</span>
+          <span>Botao direito para mover</span>
         </div>
       </div>
 

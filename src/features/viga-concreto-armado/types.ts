@@ -1,4 +1,4 @@
-﻿export interface Pilar {
+export interface Pilar {
   id: string;
   width: number;
   position: number;
@@ -40,7 +40,8 @@ export type SelecaoDiagramaViga =
   | 'cortante-engastado'
   | 'momento-engastado'
   | 'cortante-envoltoria'
-  | 'momento-envoltoria';
+  | 'momento-envoltoria'
+  | 'momento-envoltoria-deslocada';
 
 export type ModeloGovernante = string;
 
@@ -63,6 +64,14 @@ export interface EnvelopeSection {
   governanteNegativo: ModeloGovernante | null;
 }
 
+export interface MomentDecalagemView {
+  al: number;
+  criterio: "informado" | "simplificado_d" | "calculado_norma";
+  envelopePositivaDeslocada: EnvelopeDiagramPoint[];
+  envelopeNegativaDeslocada: EnvelopeDiagramPoint[];
+  secoesDeslocadas: EnvelopeSection[];
+}
+
 export interface EnvelopeDiagramView {
   bases?: Array<{
     id: string;
@@ -77,6 +86,7 @@ export interface EnvelopeDiagramView {
   pontosDescontinuidade: number[];
   unit: string;
   displayFactor: number;
+  decalagem?: MomentDecalagemView;
 }
 
 export interface ResultadosProcessamentoViga {
