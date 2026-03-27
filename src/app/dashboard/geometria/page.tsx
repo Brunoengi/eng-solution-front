@@ -1,7 +1,6 @@
 'use client';
 
 import { ReactNode, useMemo, useState } from 'react';
-import { buildPublicApiUrl } from '@/services/api/url';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { SidebarProvider } from '@/components/ui/sidebar';
@@ -162,6 +161,8 @@ const buildInitialParams = (option: GeometryOption): Record<string, string> => {
     return acc;
   }, {});
 };
+
+const buildGeometryProxyPath = (path: string): string => `/api${path}`;
 
 const getFieldUnit = (field: GeometryField): string | null => {
   if (field.unit !== undefined) {
@@ -401,7 +402,7 @@ export default function GeometriaPage() {
   );
 
   const endpointPath = selectedOption.endpoint;
-  const endpointUrl = buildPublicApiUrl(endpointPath);
+  const endpointUrl = buildGeometryProxyPath(endpointPath);
 
   const {
     isSending,
