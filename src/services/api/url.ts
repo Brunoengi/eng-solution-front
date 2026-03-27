@@ -8,8 +8,13 @@ const normalizePath = (path: string): string => {
 
 const removeTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
 
+const getDefaultBaseUrl = (): string => {
+  return process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001';
+};
+
 export const getPublicApiBaseUrl = (): string => {
-  return removeTrailingSlash((process.env.NEXT_PUBLIC_ESTRUTURA_API_URL ?? '').trim());
+  const configuredBaseUrl = (process.env.NEXT_PUBLIC_ESTRUTURA_API_URL ?? '').trim();
+  return removeTrailingSlash(configuredBaseUrl || getDefaultBaseUrl());
 };
 
 export const buildPublicApiUrl = (path: string): string => {

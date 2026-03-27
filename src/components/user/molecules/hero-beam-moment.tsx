@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { buildPublicApiUrl } from '@/services/api/url';
 import { Beam2DViewer } from '@/components/user/molecules/beam-2d-viewer';
 import { Beam3DViewer } from '@/components/user/molecules/beam-3d-viewer';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -57,6 +56,8 @@ const heroPayload = {
   },
 };
 
+const BEAM2D_SYSTEM_PROXY_PATH = '/api/beam2d/system';
+
 export function HeroBeamMoment({ className = '' }: { className?: string }) {
   const [modoVisualizacao, setModoVisualizacao] = useState<'cargas' | 'cortante' | 'momento'>('momento');
   const [tipoVista, setTipoVista] = useState<'3d' | '2d'>('3d');
@@ -77,10 +78,8 @@ export function HeroBeamMoment({ className = '' }: { className?: string }) {
 
   useEffect(() => {
     const processarHero = async () => {
-      const apiPath = process.env.NEXT_PUBLIC_ESTRUTURA_API_PATH ?? '/beam2d/system';
-
       try {
-        const response = await fetch(buildPublicApiUrl(apiPath), {
+        const response = await fetch(BEAM2D_SYSTEM_PROXY_PATH, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { buildPublicApiUrl } from '@/services/api/url';
 import { normalizeDistributedLoadQForApi, normalizePointLoadFyForApi } from '@/lib/beam2d-load-convention';
 import {
   Layers,
@@ -29,6 +28,9 @@ import {
   Home,
 } from 'lucide-react';
 import * as styles from '@/styles/fns-styles';
+
+const BEAM2D_SYSTEM_PROXY_PATH = '/api/beam2d/system';
+const BEAM2D_ENVELOPE_PROXY_PATH = '/api/beam2d/envelope';
 
 type OpcaoDiagrama = {
   value: SelecaoDiagramaViga;
@@ -779,8 +781,6 @@ export default function FnsPage() {
     setResultadosProcessamento(DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA);
     setEnvelopeFromApi(null);
 
-    const apiPath = process.env.NEXT_PUBLIC_ESTRUTURA_API_PATH ?? '/beam2d/system';
-    const apiEnvelopePath = process.env.NEXT_PUBLIC_ESTRUTURA_API_ENVELOPE_PATH ?? '/beam2d/envelope';
     const eModulo = Number(process.env.NEXT_PUBLIC_BEAM_E ?? 210_000);
     const nodePositions = Array.from(
       new Set(vigas.flatMap((viga) => [viga.startPosition, viga.endPosition]))
@@ -883,7 +883,7 @@ export default function FnsPage() {
         throw new Error('Nenhuma viga válida para processar (comprimento zero).');
       }
 
-      const response = await fetch(buildPublicApiUrl(apiPath), {
+      const response = await fetch(BEAM2D_SYSTEM_PROXY_PATH, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -926,7 +926,7 @@ export default function FnsPage() {
 
     try {
       if (estruturaEhVigaContinua) {
-        const response = await fetch(buildPublicApiUrl(apiEnvelopePath), {
+        const response = await fetch(BEAM2D_ENVELOPE_PROXY_PATH, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -980,18 +980,34 @@ export default function FnsPage() {
         });
 
         const responseText = await response.text();
-        const responseData: EnvelopeApiResponse = responseText ? JSON.parse(responseText) : null;
+        let responseData: EnvelopeApiResponse | Record<string, unknown> | string | null = responseText;
 
-        if (!response.ok || !responseData?.modelos || !responseData?.envoltoria) {
+        try {
+          responseData = responseText ? JSON.parse(responseText) : null;
+        } catch {
+          responseData = responseText;
+        }
+
+        if (!response.ok) {
+          const errorDetails = typeof responseData === 'string'
+            ? responseData
+            : JSON.stringify(responseData);
+
+          throw new Error(`Falha ao processar envoltoria (HTTP ${response.status}): ${errorDetails}`);
+        }
+
+        if (!responseData || typeof responseData !== 'object' || !('modelos' in responseData) || !('envoltoria' in responseData)) {
           throw new Error('Falha ao processar envoltória no backend.');
         }
 
+        const envelopeResponse = responseData as EnvelopeApiResponse;
+
         setResultadosProcessamento({
           ...DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA,
-          segundoGenero: responseData.modelos.segundoGenero ?? null,
-          engastado: responseData.modelos.engastado ?? null,
+          segundoGenero: envelopeResponse.modelos.segundoGenero ?? null,
+          engastado: envelopeResponse.modelos.engastado ?? null,
         });
-        setEnvelopeFromApi(responseData.envoltoria);
+        setEnvelopeFromApi(envelopeResponse.envoltoria);
       } else {
         const resultadoSegundoGenero = await processarModelo('segundoGenero');
         setResultadosProcessamento({
