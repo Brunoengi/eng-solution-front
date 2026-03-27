@@ -1,6 +1,7 @@
 'use client';
 
 import { ReactNode, useMemo, useState } from 'react';
+import { buildPublicApiUrl } from '@/services/api/url';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { SidebarProvider } from '@/components/ui/sidebar';
@@ -400,7 +401,7 @@ export default function GeometriaPage() {
   );
 
   const endpointPath = selectedOption.endpoint;
-  const endpointUrl = `http://localhost:3001${endpointPath}`;
+  const endpointUrl = buildPublicApiUrl(endpointPath);
 
   const {
     isSending,

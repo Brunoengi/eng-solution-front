@@ -34,3 +34,25 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Docker
+
+Este frontend está preparado para imagem de produção com `Next.js standalone`.
+
+Build local da imagem:
+
+```bash
+docker build -t eng-solution-front .
+```
+
+Execução local do container:
+
+```bash
+docker run --rm -p 3000:3000 \
+	-e ESTRUTURA_API_URL=http://host.docker.internal:3001 \
+	eng-solution-front
+```
+
+Para subir front + back juntos, use o `docker compose` definido em `eng-solution-back/docker-compose.yml`.
+
+Para producao atras de proxy reverso, prefira deixar `NEXT_PUBLIC_ESTRUTURA_API_URL` vazio para que o browser use o mesmo host do frontend e o proxy encaminhe as rotas da API para o backend.

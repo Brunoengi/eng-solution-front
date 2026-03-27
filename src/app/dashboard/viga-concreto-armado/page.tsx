@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { buildPublicApiUrl } from '@/services/api/url';
 import { normalizeDistributedLoadQForApi, normalizePointLoadFyForApi } from '@/lib/beam2d-load-convention';
 import {
   Layers,
@@ -778,7 +779,6 @@ export default function FnsPage() {
     setResultadosProcessamento(DEFAULT_RESULTADOS_PROCESSAMENTO_VIGA);
     setEnvelopeFromApi(null);
 
-    const apiBaseUrl = process.env.NEXT_PUBLIC_ESTRUTURA_API_URL ?? 'http://localhost:3001';
     const apiPath = process.env.NEXT_PUBLIC_ESTRUTURA_API_PATH ?? '/beam2d/system';
     const apiEnvelopePath = process.env.NEXT_PUBLIC_ESTRUTURA_API_ENVELOPE_PATH ?? '/beam2d/envelope';
     const eModulo = Number(process.env.NEXT_PUBLIC_BEAM_E ?? 210_000);
@@ -883,7 +883,7 @@ export default function FnsPage() {
         throw new Error('Nenhuma viga válida para processar (comprimento zero).');
       }
 
-      const response = await fetch(apiBaseUrl + apiPath, {
+      const response = await fetch(buildPublicApiUrl(apiPath), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -926,7 +926,7 @@ export default function FnsPage() {
 
     try {
       if (estruturaEhVigaContinua) {
-        const response = await fetch(apiBaseUrl + apiEnvelopePath, {
+        const response = await fetch(buildPublicApiUrl(apiEnvelopePath), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

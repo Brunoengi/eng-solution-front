@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { buildPublicApiUrl } from '@/services/api/url';
 import { Beam2DViewer } from '@/components/user/molecules/beam-2d-viewer';
 import { Beam3DViewer } from '@/components/user/molecules/beam-3d-viewer';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -76,11 +77,10 @@ export function HeroBeamMoment({ className = '' }: { className?: string }) {
 
   useEffect(() => {
     const processarHero = async () => {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_ESTRUTURA_API_URL ?? 'http://localhost:3001';
       const apiPath = process.env.NEXT_PUBLIC_ESTRUTURA_API_PATH ?? '/beam2d/system';
 
       try {
-        const response = await fetch(`${apiBaseUrl}${apiPath}`, {
+        const response = await fetch(buildPublicApiUrl(apiPath), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

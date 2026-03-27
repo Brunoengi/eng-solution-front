@@ -1,7 +1,7 @@
 import { requestApi } from '@/services/api/client';
+import { buildPublicApiUrl } from '@/services/api/url';
 import type { Nbr6118Entry } from '@/types/nbr6118';
 
-const DEFAULT_API_BASE_URL = 'http://localhost:3001';
 const STANDARDS_BASE_PATH = '/standards/nbr6118';
 
 export class Nbr6118ApiError extends Error {
@@ -13,14 +13,6 @@ export class Nbr6118ApiError extends Error {
     this.status = status;
   }
 }
-
-const getApiBaseUrl = (): string => {
-  return process.env.NEXT_PUBLIC_ESTRUTURA_API_URL ?? DEFAULT_API_BASE_URL;
-};
-
-const buildUrl = (path: string): string => {
-  return `${getApiBaseUrl()}${path}`;
-};
 
 const hasEditorialTableId = (entry: Nbr6118Entry): boolean => {
   return Boolean(entry.metadata.table?.trim());
@@ -100,7 +92,7 @@ const toErrorMessage = (status: number, fallback: string): string => {
 };
 
 export async function getNbr6118Tables(): Promise<Nbr6118Entry[]> {
-  const response = await requestApi<unknown>(buildUrl(`${STANDARDS_BASE_PATH}/tables`));
+  const response = await requestApi<unknown>(buildPublicApiUrl(`${STANDARDS_BASE_PATH}/tables`));
 
   if (!response.ok) {
     throw new Nbr6118ApiError(toErrorMessage(response.status, 'Falha ao carregar tabelas da NBR 6118.'), response.status);
@@ -111,7 +103,7 @@ export async function getNbr6118Tables(): Promise<Nbr6118Entry[]> {
 
 export async function getNbr6118TableById(tableId: string): Promise<Nbr6118Entry | null> {
   const response = await requestApi<unknown>(
-    buildUrl(`${STANDARDS_BASE_PATH}/tables/${encodeURIComponent(tableId)}`),
+    buildPublicApiUrl(`${STANDARDS_BASE_PATH}/tables/${encodeURIComponent(tableId)}`),
   );
 
   if (!response.ok) {
@@ -123,7 +115,7 @@ export async function getNbr6118TableById(tableId: string): Promise<Nbr6118Entry
 
 export async function getNbr6118EntryBySourceId(sourceId: string): Promise<Nbr6118Entry | null> {
   const response = await requestApi<unknown>(
-    buildUrl(`${STANDARDS_BASE_PATH}/entries/${encodeURIComponent(sourceId)}`),
+    buildPublicApiUrl(`${STANDARDS_BASE_PATH}/entries/${encodeURIComponent(sourceId)}`),
   );
 
   if (!response.ok) {
