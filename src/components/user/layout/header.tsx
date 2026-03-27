@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useRef, useState } from 'react';
 
@@ -84,11 +84,8 @@ export function Header() {
                     Dimensionamento Estrutural
                   </h3>
                   <div className="space-y-2 text-sm">
-                    <a href="#viga-concreto" className="block text-muted-foreground hover:text-foreground">
+                    <a href="/dashboard/viga-concreto-armado" className="block text-muted-foreground hover:text-foreground">
                       Viga de concreto armado
-                    </a>
-                    <a href="#esforcos" className="block text-muted-foreground hover:text-foreground">
-                      Esforços solicitantes
                     </a>
                   </div>
                 </div>
@@ -117,3 +114,7 @@ export function Header() {
     </header>
   );
 }
+
+
+
+

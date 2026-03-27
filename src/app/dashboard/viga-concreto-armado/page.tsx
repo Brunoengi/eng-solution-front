@@ -259,6 +259,7 @@ export default function FnsPage() {
   ];
 
   const {
+    criteriosProjeto,
     pilares,
     setPilares,
     vigas,
@@ -969,6 +970,12 @@ export default function FnsPage() {
                 },
               },
             ],
+            criteriosBitolas: {
+              mode: criteriosProjeto.modoSelecaoBitolas,
+              longitudinalTension: criteriosProjeto.bitolasLongitudinalTracaoMm,
+              longitudinalCompression: criteriosProjeto.bitolasLongitudinalCompressaoMm,
+              stirrup: criteriosProjeto.bitolasEstriboMm,
+            },
           }),
         });
 
@@ -1654,7 +1661,3 @@ export default function FnsPage() {
     </SidebarProvider>
   );
 }
-
-
-
-

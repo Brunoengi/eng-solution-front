@@ -6,8 +6,17 @@ import { AppSidebar, SidebarToggleButton, type MenuItem } from '../../../../comp
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { useVigaConcretoArmado } from '@/features/viga-concreto-armado/context/viga-concreto-armado-provider';
-import { COBRIMENTO_NOMINAL_VIGA_POR_CAA, type ClasseAgressividadeAmbiental, type ClasseConcreto } from '@/features/viga-concreto-armado/types';
+import {
+  BITOLAS_NORMATIVAS_ESTRIBO_MM,
+  BITOLAS_NORMATIVAS_LONGITUDINAL_MM,
+  COBRIMENTO_NOMINAL_VIGA_POR_CAA,
+  type BeamRebarSelectionMode,
+  type ClasseAgressividadeAmbiental,
+  type ClasseConcreto,
+  type TipoGanchoArmadura,
+} from '@/features/viga-concreto-armado/types';
 import { Layers, ArrowUpDown, Anchor, Square, Settings, FileText, Link as LinkIcon, Home } from 'lucide-react';
 
 function getStatusVisual(origemCobrimento: 'norma' | 'usuario', cobrimentoAdotadoCm: number, cobrimentoNormativoCm: number) {
@@ -40,9 +49,39 @@ function getStatusVisual(origemCobrimento: 'norma' | 'usuario', cobrimentoAdotad
 const CLASSES_CONCRETO: ClasseConcreto[] = ['C20', 'C25', 'C30', 'C35', 'C40', 'C45', 'C50', 'C55', 'C60', 'C65', 'C70', 'C75', 'C80', 'C85', 'C90'];
 const OPCOES_GAMMA_C = ['1.4', '1.2'] as const;
 const OPCOES_GAMMA_S = ['1.15', '1'] as const;
+const OPCOES_TIPO_GANCHO: Array<{ value: TipoGanchoArmadura; label: string }> = [
+  { value: 'semi-circular', label: 'Semi-circular' },
+  { value: 'angulo-45', label: '\u00c2ngulo de 45\u00b0' },
+  { value: 'angulo-reto', label: '\u00c2ngulo reto' },
+];
+type BitolaRoleField = 'bitolasLongitudinalTracaoMm' | 'bitolasLongitudinalCompressaoMm' | 'bitolasEstriboMm';
+
+const OPCOES_MODO_SELECAO_BITOLAS: Array<{ value: BeamRebarSelectionMode; label: string }> = [
+  { value: 'normative', label: 'Normativo' },
+  { value: 'custom', label: 'Personalizado' },
+  { value: 'hybrid', label: 'Hibrido' },
+];
+
+const BITOLA_ROLE_CONFIG: Array<{ field: BitolaRoleField; label: string; normative: readonly number[] }> = [
+  {
+    field: 'bitolasLongitudinalTracaoMm',
+    label: 'Longitudinal de tracao',
+    normative: BITOLAS_NORMATIVAS_LONGITUDINAL_MM,
+  },
+  {
+    field: 'bitolasLongitudinalCompressaoMm',
+    label: 'Longitudinal de compressao',
+    normative: BITOLAS_NORMATIVAS_LONGITUDINAL_MM,
+  },
+  {
+    field: 'bitolasEstriboMm',
+    label: 'Estribo',
+    normative: BITOLAS_NORMATIVAS_ESTRIBO_MM,
+  },
+];
 
 export default function CriteriosProjetoVigaPage() {
-  const { criteriosProjeto, updateCriteriosProjeto, vigas } = useVigaConcretoArmado();
+  const { criteriosProjeto, updateCriteriosProjeto } = useVigaConcretoArmado();
 
   const menuItems: MenuItem[] = [
     {
@@ -71,10 +110,6 @@ export default function CriteriosProjetoVigaPage() {
     { label: 'Critérios de Projeto', href: '/dashboard/viga-concreto-armado/criterios-projeto', icon: Settings, isActive: true },
   ];
 
-  const firstBeam = vigas[0];
-  const selfWeightExample = firstBeam
-    ? ((firstBeam.width / 100) * (firstBeam.height / 100) * criteriosProjeto.pesoEspecificoConcreto)
-    : 0;
 
   const statusVisual = getStatusVisual(
     criteriosProjeto.origemCobrimento,
@@ -113,6 +148,77 @@ export default function CriteriosProjetoVigaPage() {
       cobrimentoAdotadoCm: value,
     });
   };
+  const getSelectedBitolasByField = (field: BitolaRoleField): number[] => {
+    if (field === 'bitolasLongitudinalTracaoMm') {
+      return criteriosProjeto.bitolasLongitudinalTracaoMm;
+    }
+
+    if (field === 'bitolasLongitudinalCompressaoMm') {
+      return criteriosProjeto.bitolasLongitudinalCompressaoMm;
+    }
+
+    return criteriosProjeto.bitolasEstriboMm;
+  };
+
+  const updateBitolasByField = (field: BitolaRoleField, values: number[]) => {
+    const uniqueSorted = Array.from(new Set(values)).sort((left, right) => left - right);
+
+    if (field === 'bitolasLongitudinalTracaoMm') {
+      updateCriteriosProjeto({ bitolasLongitudinalTracaoMm: uniqueSorted });
+      return;
+    }
+
+    if (field === 'bitolasLongitudinalCompressaoMm') {
+      updateCriteriosProjeto({ bitolasLongitudinalCompressaoMm: uniqueSorted });
+      return;
+    }
+
+    updateCriteriosProjeto({ bitolasEstriboMm: uniqueSorted });
+  };
+
+  const handleModoSelecaoBitolasChange = (mode: BeamRebarSelectionMode) => {
+    updateCriteriosProjeto({ modoSelecaoBitolas: mode });
+  };
+
+  const handleToggleBitola = (field: BitolaRoleField, bitola: number) => {
+    if (criteriosProjeto.modoSelecaoBitolas === 'normative') {
+      return;
+    }
+
+    const selected = getSelectedBitolasByField(field);
+    const next = selected.includes(bitola)
+      ? selected.filter((value) => value !== bitola)
+      : [...selected, bitola];
+
+    updateBitolasByField(field, next);
+  };
+
+  const handleSelecionarTodasBitolasNormativas = (field: BitolaRoleField, normative: readonly number[]) => {
+    if (criteriosProjeto.modoSelecaoBitolas === 'normative') {
+      return;
+    }
+
+    updateBitolasByField(field, [...normative]);
+  };
+
+  const handleLimparBitolas = (field: BitolaRoleField) => {
+    if (criteriosProjeto.modoSelecaoBitolas === 'normative') {
+      return;
+    }
+
+    updateBitolasByField(field, []);
+  };
+
+  const handleRestaurarBitolasPadrao = (field: BitolaRoleField, normative: readonly number[]) => {
+    updateBitolasByField(field, [...normative]);
+  };
+
+  const resumoBitolas = [
+    ...criteriosProjeto.bitolasLongitudinalTracaoMm,
+    ...criteriosProjeto.bitolasLongitudinalCompressaoMm,
+    ...criteriosProjeto.bitolasEstriboMm,
+  ];
+  const totalBitolasUnicas = new Set(resumoBitolas).size;
 
   return (
     <SidebarProvider defaultOpen={false}>
@@ -292,6 +398,192 @@ export default function CriteriosProjetoVigaPage() {
 
                 </article>
 
+                <article className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-slate-900">Dobramento dos ganchos longitudinais</h2>
+                    </div>
+                    <Link
+                      href="/dashboard/normas/nbr6118/tabelas/9.1"
+                      className="inline-flex min-w-[18rem] justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-100"
+                    >
+                      Abrir NBR6118/2023 - tabela 9.1
+                    </Link>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="tipo-gancho-longitudinal-tracao">{"Longitudinal de tra\u00e7\u00e3o"}</Label>
+                      <Select
+                        value={criteriosProjeto.tipoGanchoLongitudinalTracao}
+                        onValueChange={(value: TipoGanchoArmadura) => updateCriteriosProjeto({ tipoGanchoLongitudinalTracao: value })}
+                      >
+                        <SelectTrigger id="tipo-gancho-longitudinal-tracao">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {OPCOES_TIPO_GANCHO.map((opcao) => (
+                            <SelectItem key={opcao.value} value={opcao.value}>{opcao.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="tipo-gancho-longitudinal-compressao">{"Longitudinal de compress\u00e3o"}</Label>
+                      <Select
+                        value={criteriosProjeto.tipoGanchoLongitudinalCompressao}
+                        onValueChange={(value: TipoGanchoArmadura) => updateCriteriosProjeto({ tipoGanchoLongitudinalCompressao: value })}
+                      >
+                        <SelectTrigger id="tipo-gancho-longitudinal-compressao">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {OPCOES_TIPO_GANCHO.map((opcao) => (
+                            <SelectItem key={opcao.value} value={opcao.value}>{opcao.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </article>
+
+                <article className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-slate-900">Dobramento dos ganchos dos estribos</h2>
+                    </div>
+                    <Link
+                      href="/dashboard/normas/nbr6118/tabelas/9.2"
+                      className="inline-flex min-w-[18rem] justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-100"
+                    >
+                      Abrir NBR6118/2023 - tabela 9.2
+                    </Link>
+                  </div>
+
+                  <div className="mt-5">
+                    <Label htmlFor="tipo-gancho-estribo">Estribo</Label>
+                    <Select
+                      value={criteriosProjeto.tipoGanchoEstribo}
+                      onValueChange={(value: TipoGanchoArmadura) => updateCriteriosProjeto({ tipoGanchoEstribo: value })}
+                    >
+                      <SelectTrigger id="tipo-gancho-estribo">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {OPCOES_TIPO_GANCHO.map((opcao) => (
+                          <SelectItem key={opcao.value} value={opcao.value}>{opcao.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </article>
+                <article className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-slate-900">Faixa de bitolas das armaduras</h2>
+                      <p className="mt-1 text-sm text-slate-600">Selecione conjuntos de bitolas por papel da armadura para o dimensionamento.</p>
+                    </div>
+                    <Link
+                      href="/dashboard/normas/nbr6118/tabelas/9.2"
+                      className="inline-flex min-w-[18rem] justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-100"
+                    >
+                      Referencias normativas
+                    </Link>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="modo-selecao-bitolas">Modo de selecao das bitolas</Label>
+                      <Select
+                        value={criteriosProjeto.modoSelecaoBitolas}
+                        onValueChange={(value: BeamRebarSelectionMode) => handleModoSelecaoBitolasChange(value)}
+                      >
+                        <SelectTrigger id="modo-selecao-bitolas">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {OPCOES_MODO_SELECAO_BITOLAS.map((opcao) => (
+                            <SelectItem key={opcao.value} value={opcao.value}>{opcao.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Resumo de selecao</p>
+                      <p className="mt-2 text-sm text-slate-700">Bitolas unicas selecionadas: <span className="font-semibold text-slate-900">{totalBitolasUnicas}</span></p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 space-y-5">
+                    {BITOLA_ROLE_CONFIG.map((config) => {
+                      const selected = getSelectedBitolasByField(config.field);
+
+                      return (
+                        <div key={config.field} className="rounded-2xl border border-slate-200 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">{config.label}</p>
+                              <p className="mt-1 text-xs text-slate-600">
+                                Selecionadas: {selected.length > 0 ? selected.join(', ') + ' mm' : 'Nenhuma'}
+                              </p>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={criteriosProjeto.modoSelecaoBitolas === 'normative'}
+                                onClick={() => handleSelecionarTodasBitolasNormativas(config.field, config.normative)}
+                              >
+                                Selecionar todas
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={criteriosProjeto.modoSelecaoBitolas === 'normative'}
+                                onClick={() => handleLimparBitolas(config.field)}
+                              >
+                                Limpar
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleRestaurarBitolasPadrao(config.field, config.normative)}
+                              >
+                                Restaurar padrao
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {config.normative.map((bitola) => {
+                              const ativo = selected.includes(bitola);
+
+                              return (
+                                <Button
+                                  key={`${config.field}-${bitola}`}
+                                  type="button"
+                                  size="sm"
+                                  variant={ativo ? 'default' : 'outline'}
+                                  disabled={criteriosProjeto.modoSelecaoBitolas === 'normative'}
+                                  onClick={() => handleToggleBitola(config.field, bitola)}
+                                  className="min-w-[6.5rem]"
+                                >
+                                  {bitola} mm
+                                </Button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </article>
                 <article className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm">
                   <div className="flex items-start justify-between gap-4">
                     <div>

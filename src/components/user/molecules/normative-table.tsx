@@ -120,11 +120,11 @@ export function NormativeTable({ representation }: NormativeTableProps) {
             {representation.bodyRows.map((row, rowIndex) => (
               <tr key={`b-${rowIndex}`} className="even:bg-slate-50/50">
                 {row.map((cell, cellIndex) => {
-                  const hasStructuredFormatting = Boolean(
-                    cell.fragments?.some((fragment) => fragment.kind === 'lineBreak' || fragment.kind === 'sub' || fragment.kind === 'sup'),
+                  const hasLineBreak = Boolean(
+                    cell.fragments?.some((fragment) => fragment.kind === 'lineBreak'),
                   );
                   const isShortCell =
-                    !hasStructuredFormatting && cell.text.length <= 24 && !/\s{2,}/.test(cell.text);
+                    !hasLineBreak && cell.text.length <= 24 && !/\s{2,}/.test(cell.text);
 
                   return (
                     <td

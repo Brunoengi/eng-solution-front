@@ -98,7 +98,9 @@ export type ClasseAgressividadeAmbiental = 'I' | 'II' | 'III' | 'IV';
 export type ClasseConcreto = 'C20' | 'C25' | 'C30' | 'C35' | 'C40' | 'C45' | 'C50' | 'C55' | 'C60' | 'C65' | 'C70' | 'C75' | 'C80' | 'C85' | 'C90';
 export type TipoVergalhao = 'CA-50';
 export type TipoEstribo = 'CA-60';
+export type TipoGanchoArmadura = 'semi-circular' | 'angulo-45' | 'angulo-reto';
 export type OrigemCobrimento = 'norma' | 'usuario';
+export type BeamRebarSelectionMode = 'normative' | 'custom' | 'hybrid';
 
 export interface CriteriosProjetoViga {
   classeAgressividadeAmbiental: ClasseAgressividadeAmbiental;
@@ -108,6 +110,13 @@ export interface CriteriosProjetoViga {
   classeConcreto: ClasseConcreto;
   tipoVergalhao: TipoVergalhao;
   tipoEstribo: TipoEstribo;
+  tipoGanchoLongitudinalTracao: TipoGanchoArmadura;
+  tipoGanchoLongitudinalCompressao: TipoGanchoArmadura;
+  tipoGanchoEstribo: TipoGanchoArmadura;
+  modoSelecaoBitolas: BeamRebarSelectionMode;
+  bitolasLongitudinalTracaoMm: number[];
+  bitolasLongitudinalCompressaoMm: number[];
+  bitolasEstriboMm: number[];
   gammaC: number;
   gammaS: number;
   gammaF: number;
@@ -132,6 +141,9 @@ export const COBRIMENTO_NOMINAL_VIGA_POR_CAA: Record<ClasseAgressividadeAmbienta
   IV: 5,
 };
 
+
+export const BITOLAS_NORMATIVAS_LONGITUDINAL_MM = [8, 10, 12.5, 16, 20, 22, 25, 32, 40] as const;
+export const BITOLAS_NORMATIVAS_ESTRIBO_MM = [5, 6.3, 8, 10, 12.5] as const;
 export const DEFAULT_CRITERIOS_PROJETO_VIGA: CriteriosProjetoViga = {
   classeAgressividadeAmbiental: 'II',
   cobrimentoNormativoCm: COBRIMENTO_NOMINAL_VIGA_POR_CAA.II,
@@ -140,6 +152,13 @@ export const DEFAULT_CRITERIOS_PROJETO_VIGA: CriteriosProjetoViga = {
   classeConcreto: 'C30',
   tipoVergalhao: 'CA-50',
   tipoEstribo: 'CA-60',
+  tipoGanchoLongitudinalTracao: 'semi-circular',
+  tipoGanchoLongitudinalCompressao: 'semi-circular',
+  tipoGanchoEstribo: 'angulo-45',
+  modoSelecaoBitolas: 'hybrid',
+  bitolasLongitudinalTracaoMm: [...BITOLAS_NORMATIVAS_LONGITUDINAL_MM],
+  bitolasLongitudinalCompressaoMm: [...BITOLAS_NORMATIVAS_LONGITUDINAL_MM],
+  bitolasEstriboMm: [...BITOLAS_NORMATIVAS_ESTRIBO_MM],
   gammaC: 1.4,
   gammaS: 1.15,
   gammaF: 1.4,

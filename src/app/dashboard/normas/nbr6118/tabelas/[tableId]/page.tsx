@@ -19,18 +19,6 @@ const prettyPrintJson = (value: unknown): string => {
   return JSON.stringify(value, null, 2);
 };
 
-const formatContextLabel = (value: string): string => {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-};
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> => {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-};
-
 function InlineFragments({
   fragments,
   fallbackText,
@@ -62,99 +50,6 @@ function InlineFragments({
         return <span key={key}>{fragment.text}</span>;
       })}
     </>
-  );
-}
-
-function ContextValue({ value }: { value: unknown }) {
-  if (value === null || value === undefined) {
-    return <p className="text-sm text-slate-500">Nao informado.</p>;
-  }
-
-  if (typeof value === 'string') {
-    const isFormula = /=|≤|≥|∑|γ|ψ|α|β|λ|μ|σ|Δ/.test(value);
-    return (
-      <p className={`text-sm leading-6 whitespace-pre-wrap ${isFormula ? 'font-mono text-[13px] text-slate-800' : 'text-slate-700'}`}>
-        {value}
-      </p>
-    );
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return <p className="font-mono text-sm text-slate-700">{String(value)}</p>;
-  }
-
-  if (Array.isArray(value)) {
-    if (value.every((item) => typeof item === 'string' || typeof item === 'number')) {
-      return (
-        <ul className="space-y-2 text-sm text-slate-700">
-          {value.map((item, index) => (
-            <li key={`${String(item)}-${index}`} className="rounded-lg bg-slate-50 px-3 py-2">
-              {String(item)}
-            </li>
-          ))}
-        </ul>
-      );
-    }
-
-    return (
-      <div className="space-y-3">
-        {value.map((item, index) => (
-          <section key={index} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Item {index + 1}</p>
-            <ContextValue value={item} />
-          </section>
-        ))}
-      </div>
-    );
-  }
-
-  if (isPlainObject(value)) {
-    return (
-      <div className="space-y-3">
-        {Object.entries(value).map(([key, nestedValue]) => (
-          <section key={key} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">{formatContextLabel(key)}</h4>
-            <div className="mt-2">
-              <ContextValue value={nestedValue} />
-            </div>
-          </section>
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <pre className="overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-      {prettyPrintJson(value)}
-    </pre>
-  );
-}
-
-function NormativeContextSection({ context }: { context: unknown }) {
-  const [isOpen, setIsOpen] = useState(true);
-
-  return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 md:px-5">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">Contexto normativo</h2>
-            <p className="text-sm text-slate-600">Explicacoes e referencias vindas de `payload.context`.</p>
-          </div>
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-            >
-              {isOpen ? 'Ocultar contexto' : 'Mostrar contexto'}
-            </button>
-          </CollapsibleTrigger>
-        </div>
-        <CollapsibleContent className="px-4 py-4 md:px-5">
-          <ContextValue value={context} />
-        </CollapsibleContent>
-      </section>
-    </Collapsible>
   );
 }
 
@@ -395,8 +290,6 @@ export default function Nbr6118TableDetailPage() {
                   </section>
 
                   {entry.representation ? <NormativeTable representation={entry.representation} /> : <MissingRepresentationFallback entry={entry} />}
-
-                  {entry.payload?.context !== undefined ? <NormativeContextSection context={entry.payload.context} /> : null}
 
                   {entry.payload ? <TechnicalPayloadSection payload={entry.payload} /> : null}
                 </>
