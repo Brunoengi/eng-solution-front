@@ -2,7 +2,7 @@ import { requestApi } from '@/services/api/client';
 import { buildPublicApiUrl } from '@/services/api/url';
 import type { Nbr6118Entry } from '@/types/nbr6118';
 
-const STANDARDS_BASE_PATH = '/standards/nbr6118';
+const STANDARDS_BASE_PATH = '/api/standards/nbr6118';
 
 export class Nbr6118ApiError extends Error {
   status: number;

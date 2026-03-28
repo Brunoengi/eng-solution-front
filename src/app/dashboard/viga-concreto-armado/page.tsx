@@ -112,87 +112,6 @@ function getTituloDiagrama(selecao: SelecaoDiagramaViga, estruturaEhVigaContinua
 }
 
 
-function buildMomentEnvelopeDecalagemFallback(
-  baseMomento: EnvelopeDiagramView,
-  alCm = 30,
-  toleranciaX = 1e-6,
-): EnvelopeDiagramView | null {
-  const secoesBase = (baseMomento.secoes ?? []).slice().sort((a, b) => a.x - b.x);
-  if (secoesBase.length === 0) {
-    return null;
-  }
-
-  const extremos = secoesBase.map((secao) => {
-    const positivos = secao.ramosPositivos.flatMap((branch) => branch.valores);
-    const negativos = secao.ramosNegativos.flatMap((branch) => branch.valores);
-
-    return {
-      x: secao.x,
-      positivo: positivos.length > 0 ? Math.max(...positivos) : null,
-      negativo: negativos.length > 0 ? Math.min(...negativos) : null,
-      governantePositivo: secao.governantePositivo,
-      governanteNegativo: secao.governanteNegativo,
-    };
-  });
-
-  const envelopePositiva = [] as EnvelopeDiagramView['envelopePositiva'];
-  const envelopeNegativa = [] as EnvelopeDiagramView['envelopeNegativa'];
-  const secoesDeslocadas = [] as NonNullable<EnvelopeDiagramView['secoes']>;
-
-  for (const alvo of extremos) {
-    const janela = extremos.filter((candidato) => Math.abs(candidato.x - alvo.x) <= alCm + toleranciaX);
-
-    const candidatoPositivo = janela
-      .filter((candidato) => candidato.positivo !== null)
-      .reduce<typeof janela[number] | null>((melhor, atual) => {
-        if (!melhor) return atual;
-        return (atual.positivo as number) > (melhor.positivo as number) ? atual : melhor;
-      }, null);
-
-    const candidatoNegativo = janela
-      .filter((candidato) => candidato.negativo !== null)
-      .reduce<typeof janela[number] | null>((melhor, atual) => {
-        if (!melhor) return atual;
-        return (atual.negativo as number) < (melhor.negativo as number) ? atual : melhor;
-      }, null);
-
-    if (candidatoPositivo && candidatoPositivo.positivo !== null) {
-      envelopePositiva.push({
-        x: alvo.x,
-        valor: candidatoPositivo.positivo,
-        modeloGovernante: candidatoPositivo.governantePositivo ?? '',
-      });
-    }
-
-    if (candidatoNegativo && candidatoNegativo.negativo !== null) {
-      envelopeNegativa.push({
-        x: alvo.x,
-        valor: candidatoNegativo.negativo,
-        modeloGovernante: candidatoNegativo.governanteNegativo ?? '',
-      });
-    }
-
-    secoesDeslocadas.push({
-      x: alvo.x,
-      ramosPositivos: candidatoPositivo && candidatoPositivo.positivo !== null
-        ? [{ curvaId: 'decalagem', valores: [candidatoPositivo.positivo] }]
-        : [],
-      ramosNegativos: candidatoNegativo && candidatoNegativo.negativo !== null
-        ? [{ curvaId: 'decalagem', valores: [candidatoNegativo.negativo] }]
-        : [],
-      governantePositivo: candidatoPositivo?.governantePositivo ?? null,
-      governanteNegativo: candidatoNegativo?.governanteNegativo ?? null,
-    });
-  }
-
-  return {
-    ...baseMomento,
-    envelopePositiva,
-    envelopeNegativa,
-    secoes: secoesDeslocadas,
-  };
-}
-
 function classificarApoiosDaEstrutura(pilares: Pilar[], vigas: Viga[]): ClassificacaoApoios {
   const extremidadesVigas = vigas.flatMap((viga) => [viga.startPosition, viga.endPosition]);
 
@@ -369,11 +288,6 @@ export default function FnsPage() {
         const decalagem = baseMomento.decalagem;
 
         if (!decalagem) {
-          const fallback = buildMomentEnvelopeDecalagemFallback(baseMomento, 30, 1e-6);
-          if (fallback) {
-            return { data: fallback, error: null as string | null };
-          }
-
           return { data: null, error: 'Envoltoria deslocada indisponivel na resposta da API.' };
         }
 
