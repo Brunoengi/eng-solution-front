@@ -14,15 +14,17 @@ export default function Home() {
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(rgba(148,163,184,0.06)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.55),transparent_78%)]" />
       <Header />
       <main className="relative z-10 flex-1">
-        <GridContainer className="max-w-[1440px] space-y-6 pb-16 pt-4 md:space-y-8 md:pb-24 md:pt-5">
-          <div className="flex min-h-[calc(100svh-6.5rem)] items-center xl:min-h-[calc(100svh-7rem)]">
+        <GridContainer className="max-w-[1440px] pb-16 md:pb-24">
+          <div className="flex min-h-[calc(100svh-5.75rem)] items-center py-4 md:py-5">
             <HomeHero />
           </div>
-          <HomeTrustStrip />
-          <HomeModulesGrid />
-          <HomeWorkflow />
-          <HomeApiStandards />
-          <HomeFinalCta />
+          <div className="space-y-6 md:space-y-8">
+            <HomeTrustStrip />
+            <HomeModulesGrid />
+            <HomeWorkflow />
+            <HomeApiStandards />
+            <HomeFinalCta />
+          </div>
         </GridContainer>
       </main>
     </div>

@@ -116,35 +116,38 @@ export function HomeHero() {
         </div>
 
         <div className="relative z-10">
-          <div className="home-grid-pattern rounded-[2rem] border border-[rgba(148,163,184,0.22)] bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(30,41,59,0.92))] p-3 shadow-[0_45px_90px_-52px_rgba(15,23,42,0.9)] md:p-4">
-            <div className="rounded-[1.6rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.74),rgba(15,23,42,0.5))] p-4">
+          <div className="relative overflow-hidden rounded-[2rem] border border-[rgba(148,163,184,0.24)] bg-[linear-gradient(145deg,rgba(15,23,42,0.96),rgba(16,49,76,0.92)_42%,rgba(19,78,74,0.78)_100%)] p-4 shadow-[0_45px_90px_-52px_rgba(15,23,42,0.82)] md:p-5">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.24),transparent_58%),radial-gradient(circle_at_top_right,rgba(251,191,36,0.16),transparent_42%)]" />
+            <div className="pointer-events-none absolute -bottom-8 left-10 h-28 w-28 rounded-full bg-[radial-gradient(circle,rgba(34,197,94,0.18),transparent_70%)] blur-2xl" />
+
+            <div className="relative">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[rgba(191,219,254,0.76)]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[rgba(186,230,253,0.9)]">
                     Análise em destaque
                   </p>
                   <h2 className="mt-1 text-lg font-semibold text-white">Visualização estrutural aplicada</h2>
                 </div>
-                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-[rgba(226,232,240,0.88)]">
+                <div className="rounded-full border border-[rgba(186,230,253,0.18)] bg-[rgba(255,255,255,0.08)] px-3 py-1 text-xs text-[rgba(240,249,255,0.92)]">
                   Ambiente interativo
                 </div>
               </div>
 
-              <div className="rounded-[1.35rem] border border-white/10 bg-[rgba(248,250,252,0.96)] p-2 shadow-inner shadow-[rgba(255,255,255,0.1)]">
+              <div className="rounded-[1.35rem] border border-[rgba(255,255,255,0.14)] bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(239,246,255,0.94))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_20px_40px_-28px_rgba(15,23,42,0.65)]">
                 <HeroBeamMoment viewerHeightClassName="h-[280px] min-h-[280px] lg:h-[320px] lg:min-h-[320px] 2xl:h-[350px] 2xl:min-h-[350px]" />
               </div>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-white/10 bg-white/6 p-3 text-white/90">
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-[rgba(148,163,184,0.9)]">Módulo</p>
+                <div className="rounded-2xl border border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,116,144,0.2),rgba(15,23,42,0.08))] p-3 text-white/95">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-[rgba(186,230,253,0.92)]">Módulo</p>
                   <p className="mt-1 text-sm font-medium">Viga de concreto armado</p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/6 p-3 text-white/90">
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-[rgba(148,163,184,0.9)]">Saída</p>
+                <div className="rounded-2xl border border-[rgba(251,191,36,0.18)] bg-[linear-gradient(180deg,rgba(180,83,9,0.18),rgba(15,23,42,0.08))] p-3 text-white/95">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-[rgba(254,240,138,0.94)]">Saída</p>
                   <p className="mt-1 text-sm font-medium">Diagramas e verificações</p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/6 p-3 text-white/90">
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-[rgba(148,163,184,0.9)]">Integração</p>
+                <div className="rounded-2xl border border-[rgba(74,222,128,0.2)] bg-[linear-gradient(180deg,rgba(21,128,61,0.18),rgba(15,23,42,0.08))] p-3 text-white/95">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-[rgba(187,247,208,0.94)]">Integração</p>
                   <p className="mt-1 text-sm font-medium">Interface e serviços internos</p>
                 </div>
               </div>
