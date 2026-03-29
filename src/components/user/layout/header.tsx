@@ -76,30 +76,62 @@ export function Header() {
             </Button>
 
             <div
-              className={`${isApiMenuOpen ? 'block' : 'hidden'} absolute right-0 top-full z-50 mt-2 w-[min(680px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-md border border-border bg-background p-4 shadow-sm`}
+              className={`${isApiMenuOpen ? 'block' : 'hidden'} absolute right-0 top-full z-50 mt-2 w-[min(860px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-md border border-border bg-background p-4 shadow-sm`}
             >
-              <div className="grid grid-cols-2 gap-8">
+              <div className="grid gap-8 md:grid-cols-3">
                 <div className="space-y-3">
                   <h3 className="text-sm font-semibold text-foreground">
                     Dimensionamento Estrutural
                   </h3>
                   <div className="space-y-2 text-sm">
-                    <a href="/dashboard/viga-concreto-armado" className="block text-muted-foreground hover:text-foreground">
+                    <a
+                      href="/dashboard/viga-concreto-armado"
+                      className="block text-muted-foreground hover:text-foreground"
+                    >
                       Viga de concreto armado
                     </a>
                   </div>
                 </div>
 
-                <div className="space-y-3 border-l border-border pl-8">
+                <div className="space-y-3 md:border-l md:border-border md:pl-8">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Modelo Estrutural
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <a
+                      href="/dashboard/viga-continua"
+                      className="block text-muted-foreground hover:text-foreground"
+                    >
+                      Viga continua
+                    </a>
+                    <a
+                      href="/dashboard/portico-plano"
+                      className="block text-muted-foreground hover:text-foreground"
+                    >
+                      Portico plano
+                    </a>
+                  </div>
+                </div>
+
+                <div className="space-y-3 md:border-l md:border-border md:pl-8">
                   <h3 className="text-sm font-semibold text-foreground">Outros</h3>
                   <div className="space-y-2 text-sm">
-                    <a href="/dashboard/geometria" className="block text-muted-foreground hover:text-foreground">
+                    <a
+                      href="/dashboard/geometria"
+                      className="block text-muted-foreground hover:text-foreground"
+                    >
                       Geometria
                     </a>
-                    <a href="/dashboard/pilar-segunda-ordem-local" className="block text-muted-foreground hover:text-foreground">
+                    <a
+                      href="/dashboard/pilar-segunda-ordem-local"
+                      className="block text-muted-foreground hover:text-foreground"
+                    >
                       Pilar - Segunda ordem local
                     </a>
-                    <a href="/dashboard/normas" className="block text-muted-foreground hover:text-foreground">
+                    <a
+                      href="/dashboard/normas"
+                      className="block text-muted-foreground hover:text-foreground"
+                    >
                       Biblioteca de Normas
                     </a>
                   </div>
@@ -114,7 +146,3 @@ export function Header() {
     </header>
   );
 }
-
-
-
-

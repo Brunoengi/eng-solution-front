@@ -9,7 +9,8 @@ const normalizePath = (path: string): string => {
 const removeTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
 
 const getDefaultBaseUrl = (): string => {
-  return process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001';
+  // Padrao unificado: browser sempre fala com o proprio host (Next /api/*).
+  return '';
 };
 
 export const getPublicApiBaseUrl = (): string => {

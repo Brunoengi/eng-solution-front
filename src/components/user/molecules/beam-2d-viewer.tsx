@@ -33,6 +33,12 @@ interface CarregamentoDistribuido {
   vigaId?: string;
 }
 
+interface MomentoAplicado {
+  id: string;
+  position: number;
+  magnitude: number;
+}
+
 interface PontoDiagrama {
   x: number;
   valor: number;
@@ -233,12 +239,18 @@ interface Beam2DViewerProps {
   vigas?: Viga[];
   carregamentosPontuais?: CarregamentoPontual[];
   carregamentosDistribuidos?: CarregamentoDistribuido[];
+  momentosAplicados?: MomentoAplicado[];
   exibirDiagramas?: boolean;
   diagramaAtivo?: TipoDiagrama;
   escalaYDiagrama?: number;
   resultadoProcessamento?: unknown;
   modoEnvoltoria?: boolean;
   envelopeView?: EnvelopeDiagramView | null;
+  lengthDisplayFactor?: number;
+  lengthUnitLabel?: string;
+  pointLoadUnitLabel?: string;
+  distributedLoadUnitLabel?: string;
+  momentLoadUnitLabel?: string;
   className?: string;
 }
 
@@ -247,12 +259,18 @@ export function Beam2DViewer({
   vigas = [],
   carregamentosPontuais = [],
   carregamentosDistribuidos = [],
+  momentosAplicados = [],
   exibirDiagramas = false,
   diagramaAtivo = 'esforcoCortante',
   escalaYDiagrama = 1,
   resultadoProcessamento = null,
   modoEnvoltoria = false,
   envelopeView = null,
+  lengthDisplayFactor = 1,
+  lengthUnitLabel = 'cm',
+  pointLoadUnitLabel = 'kN',
+  distributedLoadUnitLabel = 'kN/m',
+  momentLoadUnitLabel = 'kN*m',
   className = '' 
 }: Beam2DViewerProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -415,7 +433,7 @@ export function Beam2DViewer({
       if (!item || typeof item !== 'object' || Array.isArray(item)) return;
 
       const obj = item as Record<string, unknown>;
-      const xArray = getArrayFromCandidates(obj, ['x', 'X', 'posicoes', 'positions']);
+      const xArray = getArrayFromCandidates(obj, ['xGlobal', 'x_global', 'x', 'X', 'posicoes', 'positions']);
       const yArray = diagramaAtivo === 'esforcoCortante'
         ? getArrayFromCandidates(obj, ['shear', 'esforcoCortante', 'v'])
         : getArrayFromCandidates(obj, ['moment', 'momentoFletor', 'm']);
@@ -619,6 +637,11 @@ export function Beam2DViewer({
     return `${formatValue(branchValue)} ${unit} (gov: ${governanteTxt}; curvas: ${curvas})`;
   };
 
+  const clamp = (value: number, min: number, max: number) => {
+    if (max < min) return min;
+    return Math.min(max, Math.max(min, value));
+  };
+
 
   return (
     <div ref={containerRef} className={`w-full ${className}`}>
@@ -768,7 +791,7 @@ export function Beam2DViewer({
                 fill="#333"
                 fontWeight="600"
               >
-                {vigaWorldLength} cm
+                {(vigaWorldLength * lengthDisplayFactor).toFixed(lengthDisplayFactor < 1 ? 2 : 0)} {lengthUnitLabel}
               </text>
             </g>
           );
@@ -811,7 +834,7 @@ export function Beam2DViewer({
                 fill={color}
                 fontWeight="700"
               >
-                {Math.abs(carga.magnitude)} kN
+                {Math.abs(carga.magnitude)} {pointLoadUnitLabel}
               </text>
             </g>
           );
@@ -873,7 +896,36 @@ export function Beam2DViewer({
                 fill={color}
                 fontWeight="600"
               >
-                {Math.abs(carga.magnitude)} kN/m
+                {Math.abs(carga.magnitude)} {distributedLoadUnitLabel}
+              </text>
+            </g>
+          );
+        })}
+
+        {!exibirDiagramas && momentosAplicados.map((momento, index) => {
+          const momentoX = worldToSVG(momento.position);
+          const color = getColor(carregamentosPontuais.length + carregamentosDistribuidos.length + index);
+          const radius = 20;
+          const centerY = beamY - 18;
+
+          return (
+            <g key={momento.id}>
+              <path
+                d={`M ${momentoX - radius} ${centerY} A ${radius} ${radius} 0 1 1 ${momentoX + radius} ${centerY}`}
+                fill="none"
+                stroke={color}
+                strokeWidth="3"
+                markerEnd="url(#arrowhead)"
+              />
+              <text
+                x={momentoX}
+                y={centerY - 18}
+                textAnchor="middle"
+                fontSize="11"
+                fill={color}
+                fontWeight="700"
+              >
+                {Math.abs(momento.magnitude)} {momentLoadUnitLabel}
               </text>
             </g>
           );
@@ -1014,10 +1066,6 @@ export function Beam2DViewer({
                   allPoints.findIndex((candidate) => samePoint(candidate, point)) === index
                 ))
             : [];
-
-          const polylinePoints = points
-            .map((point) => `${worldToSVG(point.x)},${toDiagramY(point.valor)}`)
-            .join(' ');
 
           const envelopeBases = envelopeView?.bases ?? [
             { id: 'segundoGenero', label: 'Segundo genero', points: envelopeView?.baseSegundoGenero ?? [] },
@@ -1288,76 +1336,100 @@ export function Beam2DViewer({
           </text>
         )}
 
-        {exibirDiagramas && diagramHover && (
-          <g>
-            <line
-              x1={diagramHover.svgX}
-              y1={40}
-              x2={diagramHover.svgX}
-              y2={dimensions.height - 30}
-              stroke="#475569"
-              strokeWidth="1"
-              strokeDasharray="4,4"
-              opacity="0.8"
-            />
-            <circle
-              cx={diagramHover.svgX}
-              cy={diagramHover.svgY}
-              r="4"
-              fill="#0f172a"
-            />
-            <rect
-              x={Math.min(diagramHover.svgX + 10, dimensions.width - (modoEnvoltoria ? 496 : 210))}
-              y={Math.max(20, diagramHover.svgY - (modoEnvoltoria ? 58 : 38))}
-              width={modoEnvoltoria ? '486' : '200'}
-              height={modoEnvoltoria ? '56' : '32'}
-              rx="6"
-              fill="rgba(15, 23, 42, 0.9)"
-            />
-            <text
-              x={Math.min(diagramHover.svgX + 18, dimensions.width - (modoEnvoltoria ? 488 : 202))}
-              y={Math.max(40, diagramHover.svgY - (modoEnvoltoria ? 38 : 18))}
-              fontSize="11"
-              fill="#f8fafc"
-              fontWeight="600"
-            >
-              x: {diagramHover.x.toFixed(2)} cm
-            </text>
-            {!modoEnvoltoria && (
+        {exibirDiagramas && diagramHover && (() => {
+          const cardBaseWidth = modoEnvoltoria ? 486 : 200;
+          const cardHeight = modoEnvoltoria ? 56 : 32;
+          const cardMargin = 8;
+          const cardWidth = Math.min(
+            cardBaseWidth,
+            Math.max(120, dimensions.width - cardMargin * 2),
+          );
+          const cardX = clamp(
+            diagramHover.svgX + 10,
+            cardMargin,
+            dimensions.width - cardWidth - cardMargin,
+          );
+          const cardY = clamp(
+            diagramHover.svgY - (modoEnvoltoria ? 58 : 38),
+            cardMargin,
+            dimensions.height - cardHeight - cardMargin,
+          );
+          const textX = cardX + 8;
+          const xTextY = cardY + 14;
+          const valueTextY = cardY + 28;
+          const envelopeNegativeTextY = cardY + 42;
+
+          return (
+            <g>
+              <line
+                x1={diagramHover.svgX}
+                y1={40}
+                x2={diagramHover.svgX}
+                y2={dimensions.height - 30}
+                stroke="#475569"
+                strokeWidth="1"
+                strokeDasharray="4,4"
+                opacity="0.8"
+              />
+              <circle
+                cx={diagramHover.svgX}
+                cy={diagramHover.svgY}
+                r="4"
+                fill="#0f172a"
+              />
+              <rect
+                x={cardX}
+                y={cardY}
+                width={cardWidth}
+                height={cardHeight}
+                rx="6"
+                fill="rgba(15, 23, 42, 0.9)"
+              />
               <text
-                x={Math.min(diagramHover.svgX + 18, dimensions.width - 202)}
-                y={Math.max(54, diagramHover.svgY - 4)}
+                x={textX}
+                y={xTextY}
                 fontSize="11"
                 fill="#f8fafc"
                 fontWeight="600"
               >
-                {diagramaConfig.label}: {formatValue(diagramHover.valor)} {unit}
+                x: {diagramHover.x.toFixed(2)} cm
               </text>
-            )}
-            {modoEnvoltoria && (
-              <>
+              {!modoEnvoltoria && (
                 <text
-                  x={Math.min(diagramHover.svgX + 18, dimensions.width - 488)}
-                  y={Math.max(54, diagramHover.svgY - 24)}
+                  x={textX}
+                  y={valueTextY}
                   fontSize="11"
-                  fill="#86efac"
+                  fill="#f8fafc"
                   fontWeight="600"
                 >
-                  Env+: {formatEnvelopeBranch(diagramHover.secao?.ramosPositivos ?? [], diagramHover.secao?.governantePositivo ?? null, 'positive')}
+                  {diagramaConfig.label}: {formatValue(diagramHover.valor)} {unit}
                 </text>
-                <text
-                  x={Math.min(diagramHover.svgX + 18, dimensions.width - 488)}
-                  y={Math.max(68, diagramHover.svgY - 10)}
-                  fontSize="11"
-                  fill="#fca5a5"
-                  fontWeight="600"
-                >
-                  Env-: {formatEnvelopeBranch(diagramHover.secao?.ramosNegativos ?? [], diagramHover.secao?.governanteNegativo ?? null, 'negative')}{diagramHover.descontinuidade ? ' | descontinuidade' : ''}
-                </text>
-              </>
-            )}
-          </g>
-        )}
+              )}
+              {modoEnvoltoria && (
+                <>
+                  <text
+                    x={textX}
+                    y={valueTextY}
+                    fontSize="11"
+                    fill="#86efac"
+                    fontWeight="600"
+                  >
+                    Env+: {formatEnvelopeBranch(diagramHover.secao?.ramosPositivos ?? [], diagramHover.secao?.governantePositivo ?? null, 'positive')}
+                  </text>
+                  <text
+                    x={textX}
+                    y={envelopeNegativeTextY}
+                    fontSize="11"
+                    fill="#fca5a5"
+                    fontWeight="600"
+                  >
+                    Env-: {formatEnvelopeBranch(diagramHover.secao?.ramosNegativos ?? [], diagramHover.secao?.governanteNegativo ?? null, 'negative')}{diagramHover.descontinuidade ? ' | descontinuidade' : ''}
+                  </text>
+                </>
+              )}
+            </g>
+          );
+        })()}
 
         {/* Sistema de coordenadas */}
         <g transform={`translate(${padding - 50}, ${beamY - 60})`}>

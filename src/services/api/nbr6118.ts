@@ -1,5 +1,4 @@
 import { requestApi } from '@/services/api/client';
-import { buildPublicApiUrl } from '@/services/api/url';
 import type { Nbr6118Entry } from '@/types/nbr6118';
 
 const STANDARDS_BASE_PATH = '/api/standards/nbr6118';
@@ -92,7 +91,7 @@ const toErrorMessage = (status: number, fallback: string): string => {
 };
 
 export async function getNbr6118Tables(): Promise<Nbr6118Entry[]> {
-  const response = await requestApi<unknown>(buildPublicApiUrl(`${STANDARDS_BASE_PATH}/tables`));
+  const response = await requestApi<unknown>(`${STANDARDS_BASE_PATH}/tables`);
 
   if (!response.ok) {
     throw new Nbr6118ApiError(toErrorMessage(response.status, 'Falha ao carregar tabelas da NBR 6118.'), response.status);
@@ -103,7 +102,7 @@ export async function getNbr6118Tables(): Promise<Nbr6118Entry[]> {
 
 export async function getNbr6118TableById(tableId: string): Promise<Nbr6118Entry | null> {
   const response = await requestApi<unknown>(
-    buildPublicApiUrl(`${STANDARDS_BASE_PATH}/tables/${encodeURIComponent(tableId)}`),
+    `${STANDARDS_BASE_PATH}/tables/${encodeURIComponent(tableId)}`,
   );
 
   if (!response.ok) {
@@ -115,7 +114,7 @@ export async function getNbr6118TableById(tableId: string): Promise<Nbr6118Entry
 
 export async function getNbr6118EntryBySourceId(sourceId: string): Promise<Nbr6118Entry | null> {
   const response = await requestApi<unknown>(
-    buildPublicApiUrl(`${STANDARDS_BASE_PATH}/entries/${encodeURIComponent(sourceId)}`),
+    `${STANDARDS_BASE_PATH}/entries/${encodeURIComponent(sourceId)}`,
   );
 
   if (!response.ok) {
