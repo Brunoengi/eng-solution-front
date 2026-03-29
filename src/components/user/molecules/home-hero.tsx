@@ -33,12 +33,12 @@ export function HomeHero() {
   return (
     <section
       id="home"
-      className="relative overflow-hidden rounded-[2rem] border border-white/60 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(241,245,249,0.82))] px-5 py-6 shadow-[0_30px_80px_-48px_rgba(15,23,42,0.45)] md:px-8 md:py-8"
+      className="relative overflow-hidden rounded-[2rem] border-x border-t border-x-[rgba(203,213,225,0.24)] border-t-[rgba(203,213,225,0.28)] bg-[linear-gradient(135deg,rgba(255,255,255,0.95),rgba(243,247,250,0.94)_62%,rgba(232,239,245,0.98))] px-5 py-6 shadow-[0_32px_84px_-50px_rgba(15,23,42,0.42),0_28px_36px_-30px_rgba(148,163,184,0.42),inset_0_1px_0_rgba(255,255,255,0.24)] after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-12 after:bg-[linear-gradient(180deg,rgba(241,245,249,0),rgba(226,232,240,0.86))] md:px-8 md:py-8"
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_top_left,rgba(14,116,144,0.16),transparent_58%)]" />
       <div className="pointer-events-none absolute right-[-6rem] top-10 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(249,115,22,0.18),transparent_70%)] blur-2xl" />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.85fr)] xl:items-center">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(460px,1.06fr)] xl:items-center">
         <div className="relative z-10 flex flex-col gap-6 xl:justify-center">
           <div className="space-y-5">
             <div className="flex flex-wrap gap-2">
@@ -134,7 +134,7 @@ export function HomeHero() {
               </div>
 
               <div className="rounded-[1.35rem] border border-[rgba(255,255,255,0.14)] bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(239,246,255,0.94))] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_20px_40px_-28px_rgba(15,23,42,0.65)]">
-                <HeroBeamMoment viewerHeightClassName="h-[280px] min-h-[280px] lg:h-[320px] lg:min-h-[320px] 2xl:h-[350px] 2xl:min-h-[350px]" />
+                <HeroBeamMoment viewerHeightClassName="h-[300px] min-h-[300px] lg:h-[345px] lg:min-h-[345px] 2xl:h-[385px] 2xl:min-h-[385px]" />
               </div>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-3">

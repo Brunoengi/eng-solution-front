@@ -97,7 +97,7 @@ export function Header() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-white/55 bg-[rgba(246,247,251,0.82)] backdrop-blur-xl">
+    <header className="sticky top-0 z-50 border-b border-[rgba(226,232,240,0.74)] bg-[rgba(246,247,251,0.82)] shadow-[0_14px_30px_-28px_rgba(15,23,42,0.5)] backdrop-blur-xl">
       <div className="mx-auto w-full max-w-[1440px] px-4">
         <div className="flex min-h-[4.5rem] flex-wrap items-center justify-between gap-4 py-2.5 lg:flex-nowrap">
           <Link href="/" className="group flex items-center gap-3">
@@ -224,6 +224,7 @@ export function Header() {
           </Button>
         </nav>
       </div>
+      <div className="pointer-events-none absolute inset-x-0 -bottom-4 h-4 bg-[linear-gradient(180deg,rgba(15,23,42,0.14),rgba(15,23,42,0.05)_45%,transparent)] blur-lg" />
     </header>
   );
 }

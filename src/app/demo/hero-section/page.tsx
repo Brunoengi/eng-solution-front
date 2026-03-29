@@ -1,16 +1,5 @@
 import Link from 'next/link';
-import {
-  ArrowLeft,
-  ArrowRight,
-  BookOpen,
-  Braces,
-  DraftingCompass,
-  Layers3,
-  Network,
-  Ruler,
-  Sigma,
-  Workflow,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, Braces, DraftingCompass, Sigma } from 'lucide-react';
 
 import { GridContainer } from '@/components/user/layout/grid-layout';
 import { HeroBeamMoment } from '@/components/user/molecules/hero-beam-moment';
@@ -20,141 +9,786 @@ const heroHighlights = [
   {
     icon: DraftingCompass,
     title: 'Modelagem com leitura objetiva',
-    description: 'Organize geometria, apoios e carregamentos com mais clareza desde o inicio do estudo.',
+    description: 'Organize geometria, apoios e carregamentos com mais clareza desde o início do estudo.',
   },
   {
     icon: Sigma,
-    title: 'Resultados tecnicos em evidencia',
-    description: 'Acompanhe diagramas, visualizacoes e memoriais com foco na interpretacao estrutural.',
+    title: 'Resultados técnicos em evidência',
+    description: 'Acompanhe diagramas, visualizações e memoriais com foco na interpretação estrutural.',
   },
   {
     icon: BookOpen,
-    title: 'Normas e referencias por perto',
-    description: 'Consulte conteudos tecnicos sem sair do fluxo principal de analise e dimensionamento.',
+    title: 'Normas e referências por perto',
+    description: 'Consulte conteúdos técnicos sem sair do fluxo principal de análise e dimensionamento.',
   },
   {
     icon: Braces,
-    title: 'Interface e integracao no mesmo ambiente',
-    description: 'Use os modulos prontos ou conecte os calculos aos seus proprios fluxos de trabalho.',
+    title: 'Interface e integração no mesmo ambiente',
+    description: 'Use os módulos prontos ou conecte os cálculos aos seus próprios fluxos de trabalho.',
   },
 ];
 
-const metaItems = [
-  { label: 'Modulo', value: 'Viga de concreto armado' },
-  { label: 'Saida', value: 'Diagramas e verificacoes' },
-  { label: 'Integracao', value: 'Interface e servicos internos' },
-];
+const trustPills = ['NBR 6118', 'Visualizações 2D e 3D', 'Memoriais automatizados', 'Fluxo para API'];
 
-function HeroCopyBlock() {
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap gap-2">
-        <span className="inline-flex rounded-full border border-[rgba(14,116,144,0.18)] bg-white/75 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-[rgb(14,116,144)]">
-          Solucoes para engenharia estrutural
-        </span>
-        <span className="inline-flex rounded-full border border-[rgba(14,116,144,0.18)] bg-[rgba(14,116,144,0.08)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-[rgb(14,116,144)]">
-          Plataforma tecnica
-        </span>
-      </div>
+type MetaCard = {
+  label: string;
+  value: string;
+  className: string;
+  labelClassName: string;
+};
 
-      <div className="space-y-3">
-        <h2 className="max-w-[15ch] text-[clamp(2.35rem,4.6vw,4.8rem)] font-semibold leading-[0.98] tracking-[-0.045em] text-[rgb(15,23,42)]">
-          Calculo, dimensionamento e consulta tecnica em um fluxo continuo de trabalho.
-        </h2>
-        <p className="max-w-3xl text-base leading-7 text-[rgb(71,85,105)]">
-          Reuna modelagem, visualizacao estrutural, verificacoes e acesso a normas em um ambiente pensado para apoiar
-          decisoes de projeto com mais agilidade.
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        <Button
-          asChild
-          size="lg"
-          className="rounded-full bg-[rgb(15,23,42)] px-6 text-white shadow-[0_18px_40px_-24px_rgba(15,23,42,0.8)] hover:bg-[rgb(30,41,59)]"
-        >
-          <Link href="/dashboard/viga-concreto-armado">
-            Explorar dimensionamento
-            <ArrowRight />
-          </Link>
-        </Button>
-        <Button
-          asChild
-          variant="outline"
-          size="lg"
-          className="rounded-full border-[rgba(15,23,42,0.14)] bg-white/70 px-6 text-[rgb(15,23,42)] hover:bg-white"
-        >
-          <Link href="/dashboard/geometria">Abrir modulo de geometria</Link>
-        </Button>
-        <Button
-          asChild
-          variant="ghost"
-          size="lg"
-          className="rounded-full px-5 text-[rgb(15,23,42)] hover:bg-[rgba(15,23,42,0.05)]"
-        >
-          <Link href="/#modules">Ver modulos</Link>
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function HighlightGrid() {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {heroHighlights.map(({ icon: Icon, title, description }) => (
-        <article
-          key={title}
-          className="rounded-3xl border border-white/70 bg-white/76 p-4 shadow-[0_20px_45px_-38px_rgba(15,23,42,0.45)]"
-        >
-          <div className="mb-3 inline-flex rounded-2xl bg-[rgba(14,116,144,0.12)] p-2 text-[rgb(14,116,144)]">
-            <Icon className="size-4" />
-          </div>
-          <h3 className="text-sm font-semibold text-[rgb(15,23,42)]">{title}</h3>
-          <p className="mt-2 text-sm leading-6 text-[rgb(71,85,105)]">{description}</p>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function MetaStrip() {
-  return (
-    <div className="grid gap-3 sm:grid-cols-3">
-      {metaItems.map((item) => (
-        <div key={item.label} className="rounded-2xl border border-white/10 bg-white/6 p-3 text-white/90">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-[rgba(148,163,184,0.9)]">{item.label}</p>
-          <p className="mt-1 text-sm font-medium">{item.value}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SectionHeader({
-  index,
-  title,
-  description,
-}: {
-  index: string;
+type DemoVariant = {
+  id: string;
   title: string;
   description: string;
-}) {
+  panelClassName: string;
+  topGlowClassName: string;
+  bottomGlowClassName: string;
+  headerWrapClassName?: string;
+  eyebrowClassName: string;
+  titleClassName?: string;
+  badgeClassName: string;
+  viewerShellClassName: string;
+  metaCards: MetaCard[];
+};
+
+const demoVariants: DemoVariant[] = [
+  {
+    id: '01',
+    title: 'Azul técnico equilibrado',
+    description: 'Base azul profunda com azul-claro nos brilhos e acentos frios nos metadados.',
+    panelClassName:
+      'border-[rgba(148,163,184,0.24)] bg-[linear-gradient(145deg,rgba(15,23,42,0.96),rgba(16,49,76,0.92)_42%,rgba(14,116,144,0.82)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.26),transparent_58%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_42%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(56,189,248,0.18),transparent_70%)]',
+    eyebrowClassName: 'text-[rgba(186,230,253,0.9)]',
+    badgeClassName:
+      'border-[rgba(186,230,253,0.18)] bg-[rgba(255,255,255,0.08)] text-[rgba(240,249,255,0.92)]',
+    viewerShellClassName:
+      'border-[rgba(255,255,255,0.14)] bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(239,246,255,0.94))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,116,144,0.2),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(186,230,253,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(96,165,250,0.18)] bg-[linear-gradient(180deg,rgba(37,99,235,0.2),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(191,219,254,0.92)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(103,232,249,0.18)] bg-[linear-gradient(180deg,rgba(8,145,178,0.2),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(207,250,254,0.92)]',
+      },
+    ],
+  },
+  {
+    id: '02',
+    title: 'Azul petróleo com teal',
+    description: 'Mistura mais fechada, puxando o painel para um azul petróleo mais encorpado.',
+    panelClassName:
+      'border-[rgba(94,234,212,0.16)] bg-[linear-gradient(145deg,rgba(12,24,42,0.98),rgba(13,48,74,0.94)_46%,rgba(15,118,110,0.8)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.2),transparent_55%),radial-gradient(circle_at_top_right,rgba(125,211,252,0.16),transparent_42%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(20,184,166,0.16),transparent_72%)]',
+    eyebrowClassName: 'text-[rgba(153,246,228,0.92)]',
+    badgeClassName:
+      'border-[rgba(153,246,228,0.18)] bg-[rgba(255,255,255,0.08)] text-[rgba(240,253,250,0.92)]',
+    viewerShellClassName:
+      'border-[rgba(204,251,241,0.16)] bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(236,253,245,0.9))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(45,212,191,0.18)] bg-[linear-gradient(180deg,rgba(15,118,110,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(153,246,228,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(103,232,249,0.18)] bg-[linear-gradient(180deg,rgba(8,145,178,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(207,250,254,0.92)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,116,144,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(186,230,253,0.92)]',
+      },
+    ],
+  },
+  {
+    id: '03',
+    title: 'Cobalto com azul gelo',
+    description: 'Mais contraste e sensação de produto digital, sem sair da família visual da página.',
+    panelClassName:
+      'border-[rgba(147,197,253,0.18)] bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(30,64,175,0.92)_48%,rgba(29,78,216,0.76)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(191,219,254,0.22),transparent_58%),radial-gradient(circle_at_top_right,rgba(96,165,250,0.24),transparent_40%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(59,130,246,0.18),transparent_70%)]',
+    eyebrowClassName: 'text-[rgba(219,234,254,0.92)]',
+    badgeClassName:
+      'border-[rgba(191,219,254,0.18)] bg-[rgba(255,255,255,0.08)] text-[rgba(239,246,255,0.94)]',
+    viewerShellClassName:
+      'border-[rgba(219,234,254,0.18)] bg-[linear-gradient(180deg,rgba(248,250,252,0.99),rgba(239,246,255,0.95))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(96,165,250,0.18)] bg-[linear-gradient(180deg,rgba(37,99,235,0.24),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(191,219,254,0.94)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(147,197,253,0.18)] bg-[linear-gradient(180deg,rgba(59,130,246,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(219,234,254,0.92)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,165,233,0.2),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(224,242,254,0.94)]',
+      },
+    ],
+  },
+  {
+    id: '04',
+    title: 'Ardósia azulada',
+    description: 'Versão mais sóbria, com leitura mais corporativa e menos brilho aparente.',
+    panelClassName:
+      'border-[rgba(148,163,184,0.2)] bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(30,41,59,0.96)_48%,rgba(51,65,85,0.9)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(148,163,184,0.18),transparent_56%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.14),transparent_40%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(71,85,105,0.2),transparent_72%)]',
+    eyebrowClassName: 'text-[rgba(226,232,240,0.92)]',
+    badgeClassName:
+      'border-[rgba(226,232,240,0.14)] bg-[rgba(255,255,255,0.06)] text-[rgba(241,245,249,0.9)]',
+    viewerShellClassName:
+      'border-[rgba(226,232,240,0.14)] bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(241,245,249,0.95))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(148,163,184,0.18)] bg-[linear-gradient(180deg,rgba(51,65,85,0.28),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(226,232,240,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(96,165,250,0.16)] bg-[linear-gradient(180deg,rgba(30,64,175,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(191,219,254,0.92)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(125,211,252,0.14)] bg-[linear-gradient(180deg,rgba(14,116,144,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(186,230,253,0.9)]',
+      },
+    ],
+  },
+  {
+    id: '05',
+    title: 'Azul com sinal da marca',
+    description: 'Mantém a base azul e usa um acento quente discreto para dialogar com o laranja da página.',
+    panelClassName:
+      'border-[rgba(148,163,184,0.22)] bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(16,49,76,0.92)_42%,rgba(30,64,175,0.78)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.24),transparent_58%),radial-gradient(circle_at_top_right,rgba(249,115,22,0.18),transparent_42%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(59,130,246,0.18),transparent_70%)]',
+    eyebrowClassName: 'text-[rgba(186,230,253,0.92)]',
+    badgeClassName:
+      'border-[rgba(251,191,36,0.18)] bg-[rgba(255,255,255,0.08)] text-[rgba(255,251,235,0.92)]',
+    viewerShellClassName:
+      'border-[rgba(255,255,255,0.14)] bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(239,246,255,0.94))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,116,144,0.2),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(186,230,253,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(251,191,36,0.18)] bg-[linear-gradient(180deg,rgba(180,83,9,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(254,240,138,0.94)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(96,165,250,0.18)] bg-[linear-gradient(180deg,rgba(37,99,235,0.2),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(191,219,254,0.92)]',
+      },
+    ],
+  },
+  {
+    id: '06',
+    title: 'Azul marinho refinado',
+    description: 'Uma evolução mais contida do painel atual, com azul marinho dominante e transições mais limpas.',
+    panelClassName:
+      'border-[rgba(148,163,184,0.22)] bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(15,40,68,0.94)_44%,rgba(14,86,144,0.82)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.22),transparent_58%),radial-gradient(circle_at_top_right,rgba(96,165,250,0.16),transparent_42%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(14,165,233,0.16),transparent_72%)]',
+    eyebrowClassName: 'text-[rgba(191,219,254,0.92)]',
+    badgeClassName:
+      'border-[rgba(191,219,254,0.16)] bg-[rgba(255,255,255,0.08)] text-[rgba(239,246,255,0.94)]',
+    viewerShellClassName:
+      'border-[rgba(255,255,255,0.14)] bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(239,246,255,0.95))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,116,144,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(186,230,253,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(96,165,250,0.18)] bg-[linear-gradient(180deg,rgba(29,78,216,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(191,219,254,0.92)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(103,232,249,0.16)] bg-[linear-gradient(180deg,rgba(6,182,212,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(207,250,254,0.92)]',
+      },
+    ],
+  },
+  {
+    id: '07',
+    title: 'Azul oceano suave',
+    description: 'Mais luminosidade no corpo do painel, sem perder a profundidade escura do fundo.',
+    panelClassName:
+      'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(17,65,96,0.92)_46%,rgba(8,145,178,0.74)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(186,230,253,0.22),transparent_56%),radial-gradient(circle_at_top_right,rgba(34,211,238,0.18),transparent_42%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(34,211,238,0.14),transparent_72%)]',
+    eyebrowClassName: 'text-[rgba(207,250,254,0.94)]',
+    badgeClassName:
+      'border-[rgba(207,250,254,0.16)] bg-[rgba(255,255,255,0.08)] text-[rgba(236,254,255,0.94)]',
+    viewerShellClassName:
+      'border-[rgba(207,250,254,0.16)] bg-[linear-gradient(180deg,rgba(248,250,252,0.99),rgba(236,254,255,0.9))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(103,232,249,0.18)] bg-[linear-gradient(180deg,rgba(8,145,178,0.24),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(207,250,254,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,165,233,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(224,242,254,0.92)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(96,165,250,0.18)] bg-[linear-gradient(180deg,rgba(59,130,246,0.2),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(191,219,254,0.92)]',
+      },
+    ],
+  },
+  {
+    id: '08',
+    title: 'Azul aço',
+    description: 'Uma leitura mais técnica e sóbria, com menos brilho e mais sensação de software de engenharia.',
+    panelClassName:
+      'border-[rgba(148,163,184,0.2)] bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(30,58,86,0.95)_48%,rgba(51,83,114,0.88)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(148,163,184,0.18),transparent_56%),radial-gradient(circle_at_top_right,rgba(96,165,250,0.12),transparent_42%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(100,116,139,0.16),transparent_72%)]',
+    eyebrowClassName: 'text-[rgba(226,232,240,0.9)]',
+    badgeClassName:
+      'border-[rgba(226,232,240,0.14)] bg-[rgba(255,255,255,0.06)] text-[rgba(241,245,249,0.9)]',
+    viewerShellClassName:
+      'border-[rgba(226,232,240,0.14)] bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(241,245,249,0.95))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(148,163,184,0.16)] bg-[linear-gradient(180deg,rgba(71,85,105,0.28),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(226,232,240,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(147,197,253,0.14)] bg-[linear-gradient(180deg,rgba(59,130,246,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(219,234,254,0.92)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(125,211,252,0.14)] bg-[linear-gradient(180deg,rgba(14,116,144,0.16),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(186,230,253,0.9)]',
+      },
+    ],
+  },
+  {
+    id: '09',
+    title: 'Azul anil luminoso',
+    description: 'Traz um azul mais vivo no meio do gradiente, mantendo o restante do painel bastante contido.',
+    panelClassName:
+      'border-[rgba(147,197,253,0.18)] bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(23,37,84,0.94)_38%,rgba(37,99,235,0.78)_72%,rgba(56,189,248,0.52)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(191,219,254,0.22),transparent_58%),radial-gradient(circle_at_top_right,rgba(56,189,248,0.18),transparent_40%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(96,165,250,0.18),transparent_72%)]',
+    eyebrowClassName: 'text-[rgba(219,234,254,0.94)]',
+    badgeClassName:
+      'border-[rgba(191,219,254,0.16)] bg-[rgba(255,255,255,0.08)] text-[rgba(239,246,255,0.94)]',
+    viewerShellClassName:
+      'border-[rgba(219,234,254,0.16)] bg-[linear-gradient(180deg,rgba(248,250,252,0.99),rgba(239,246,255,0.94))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(96,165,250,0.18)] bg-[linear-gradient(180deg,rgba(37,99,235,0.24),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(191,219,254,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(56,189,248,0.18)] bg-[linear-gradient(180deg,rgba(14,165,233,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(224,242,254,0.92)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(103,232,249,0.18)] bg-[linear-gradient(180deg,rgba(6,182,212,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(207,250,254,0.92)]',
+      },
+    ],
+  },
+  {
+    id: '10',
+    title: 'Azul profundo com brilho lateral',
+    description: 'Quase o mesmo peso do painel atual, mas com brilho concentrado nas laterais e menos mistura entre cores.',
+    panelClassName:
+      'border-[rgba(148,163,184,0.22)] bg-[linear-gradient(145deg,rgba(15,23,42,0.99),rgba(15,37,63,0.95)_44%,rgba(17,94,164,0.74)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.18),transparent_56%),radial-gradient(circle_at_top_right,rgba(147,197,253,0.2),transparent_42%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(29,78,216,0.16),transparent_72%)]',
+    eyebrowClassName: 'text-[rgba(191,219,254,0.92)]',
+    badgeClassName:
+      'border-[rgba(191,219,254,0.16)] bg-[rgba(255,255,255,0.07)] text-[rgba(239,246,255,0.94)]',
+    viewerShellClassName:
+      'border-[rgba(255,255,255,0.14)] bg-[linear-gradient(180deg,rgba(248,250,252,0.99),rgba(239,246,255,0.95))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,116,144,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(186,230,253,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(147,197,253,0.18)] bg-[linear-gradient(180deg,rgba(59,130,246,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(219,234,254,0.92)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(103,232,249,0.16)] bg-[linear-gradient(180deg,rgba(8,145,178,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(207,250,254,0.9)]',
+      },
+    ],
+  },
+  {
+    id: '11',
+    title: 'Oceano suave com topo claro',
+    description: 'Mais luz no topo do painel e transição mais clara no miolo, sem perder a base escura.',
+    panelClassName:
+      'border-[rgba(125,211,252,0.2)] bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(19,78,104,0.92)_42%,rgba(14,165,233,0.7)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(224,242,254,0.24),transparent_56%),radial-gradient(circle_at_top_right,rgba(34,211,238,0.18),transparent_40%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(56,189,248,0.14),transparent_72%)]',
+    eyebrowClassName: 'text-[rgba(207,250,254,0.94)]',
+    badgeClassName:
+      'border-[rgba(207,250,254,0.16)] bg-[rgba(255,255,255,0.08)] text-[rgba(236,254,255,0.94)]',
+    viewerShellClassName:
+      'border-[rgba(207,250,254,0.16)] bg-[linear-gradient(180deg,rgba(248,250,252,0.99),rgba(236,254,255,0.92))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,116,144,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(186,230,253,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(251,191,36,0.18)] bg-[linear-gradient(180deg,rgba(180,83,9,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(254,240,138,0.94)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(74,222,128,0.2)] bg-[linear-gradient(180deg,rgba(21,128,61,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(187,247,208,0.94)]',
+      },
+    ],
+  },
+  {
+    id: '12',
+    title: 'Oceano suave com centro vívido',
+    description: 'Concentra a luminosidade no centro do gradiente para dar mais volume ao corpo do painel.',
+    panelClassName:
+      'border-[rgba(125,211,252,0.2)] bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(14,70,104,0.92)_36%,rgba(6,182,212,0.68)_72%,rgba(14,116,144,0.76)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(186,230,253,0.2),transparent_56%),radial-gradient(circle_at_top_right,rgba(103,232,249,0.22),transparent_40%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(34,211,238,0.14),transparent_72%)]',
+    eyebrowClassName: 'text-[rgba(207,250,254,0.94)]',
+    badgeClassName:
+      'border-[rgba(207,250,254,0.16)] bg-[rgba(255,255,255,0.08)] text-[rgba(236,254,255,0.94)]',
+    viewerShellClassName:
+      'border-[rgba(207,250,254,0.16)] bg-[linear-gradient(180deg,rgba(248,250,252,0.99),rgba(236,254,255,0.9))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,116,144,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(186,230,253,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(251,191,36,0.18)] bg-[linear-gradient(180deg,rgba(180,83,9,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(254,240,138,0.94)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(74,222,128,0.2)] bg-[linear-gradient(180deg,rgba(21,128,61,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(187,247,208,0.94)]',
+      },
+    ],
+  },
+  {
+    id: '13',
+    title: 'Oceano suave com brilho lateral frio',
+    description: 'Mantém o painel luminoso, mas joga o brilho para as laterais para dar mais sensação de profundidade.',
+    panelClassName:
+      'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(17,59,89,0.92)_46%,rgba(14,165,233,0.62)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(224,242,254,0.18),transparent_56%),radial-gradient(circle_at_top_right,rgba(96,165,250,0.22),transparent_38%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(125,211,252,0.14),transparent_72%)]',
+    eyebrowClassName: 'text-[rgba(224,242,254,0.94)]',
+    badgeClassName:
+      'border-[rgba(224,242,254,0.14)] bg-[rgba(255,255,255,0.08)] text-[rgba(239,246,255,0.94)]',
+    viewerShellClassName:
+      'border-[rgba(224,242,254,0.16)] bg-[linear-gradient(180deg,rgba(248,250,252,0.99),rgba(239,246,255,0.92))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,116,144,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(186,230,253,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(251,191,36,0.18)] bg-[linear-gradient(180deg,rgba(180,83,9,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(254,240,138,0.94)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(74,222,128,0.2)] bg-[linear-gradient(180deg,rgba(21,128,61,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(187,247,208,0.94)]',
+      },
+    ],
+  },
+  {
+    id: '14',
+    title: 'Oceano suave com teal claro',
+    description: 'Puxa um pouco mais para o teal claro no corpo do painel, mas preserva o peso escuro do topo.',
+    panelClassName:
+      'border-[rgba(153,246,228,0.18)] bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(14,65,87,0.92)_42%,rgba(45,212,191,0.48)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(204,251,241,0.22),transparent_58%),radial-gradient(circle_at_top_right,rgba(125,211,252,0.18),transparent_40%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(45,212,191,0.12),transparent_72%)]',
+    eyebrowClassName: 'text-[rgba(204,251,241,0.94)]',
+    badgeClassName:
+      'border-[rgba(204,251,241,0.14)] bg-[rgba(255,255,255,0.08)] text-[rgba(240,253,250,0.94)]',
+    viewerShellClassName:
+      'border-[rgba(204,251,241,0.14)] bg-[linear-gradient(180deg,rgba(248,250,252,0.99),rgba(236,253,245,0.9))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,116,144,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(186,230,253,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(251,191,36,0.18)] bg-[linear-gradient(180deg,rgba(180,83,9,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(254,240,138,0.94)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(74,222,128,0.2)] bg-[linear-gradient(180deg,rgba(21,128,61,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(187,247,208,0.94)]',
+      },
+    ],
+  },
+  {
+    id: '15',
+    title: 'Oceano suave com névoa azul',
+    description: 'Uma variação mais etérea, com brilho azul claro mais espalhado no painel e base ainda técnica.',
+    panelClassName:
+      'border-[rgba(147,197,253,0.18)] bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(17,65,96,0.92)_40%,rgba(56,189,248,0.28)_100%)]',
+    topGlowClassName:
+      'bg-[radial-gradient(circle_at_top_left,rgba(219,234,254,0.16),transparent_58%),radial-gradient(circle_at_top_right,rgba(125,211,252,0.14),transparent_42%)]',
+    bottomGlowClassName:
+      'bg-[radial-gradient(circle,rgba(147,197,253,0.14),transparent_72%)]',
+    headerWrapClassName:
+      'rounded-[1.25rem] border border-[rgba(219,234,254,0.1)] bg-[linear-gradient(180deg,rgba(15,23,42,0.34),rgba(15,23,42,0.16))] px-3 py-3 backdrop-blur-sm',
+    eyebrowClassName: 'text-[rgba(219,234,254,0.94)]',
+    titleClassName: 'text-[rgba(248,250,252,0.98)]',
+    badgeClassName:
+      'border-[rgba(219,234,254,0.16)] bg-[rgba(15,23,42,0.22)] text-[rgba(239,246,255,0.94)]',
+    viewerShellClassName:
+      'border-[rgba(219,234,254,0.14)] bg-[linear-gradient(180deg,rgba(248,250,252,0.99),rgba(239,246,255,0.92))]',
+    metaCards: [
+      {
+        label: 'Módulo',
+        value: 'Viga de concreto armado',
+        className:
+          'border-[rgba(125,211,252,0.18)] bg-[linear-gradient(180deg,rgba(14,116,144,0.22),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(186,230,253,0.92)]',
+      },
+      {
+        label: 'Saída',
+        value: 'Diagramas e verificações',
+        className:
+          'border-[rgba(251,191,36,0.18)] bg-[linear-gradient(180deg,rgba(180,83,9,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(254,240,138,0.94)]',
+      },
+      {
+        label: 'Integração',
+        value: 'Interface e serviços internos',
+        className:
+          'border-[rgba(74,222,128,0.2)] bg-[linear-gradient(180deg,rgba(21,128,61,0.18),rgba(15,23,42,0.08))] text-white/95',
+        labelClassName: 'text-[rgba(187,247,208,0.94)]',
+      },
+    ],
+  },
+];
+
+function HeroTextBlock() {
   return (
-    <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[rgb(14,116,144)]">Caso {index}</p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[rgb(15,23,42)]">{title}</h2>
+    <div className="relative z-10 flex flex-col gap-6 xl:justify-center">
+      <div className="space-y-5">
+        <div className="flex flex-wrap gap-2">
+          <span className="home-eyebrow">Soluções para engenharia estrutural</span>
+          <span className="rounded-full border border-[rgba(14,116,144,0.22)] bg-[rgba(14,116,144,0.08)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[rgb(14,116,144)]">
+            Plataforma técnica
+          </span>
+        </div>
+
+        <div className="space-y-3 xl:max-w-none">
+          <h2 className="max-w-none text-[clamp(2.45rem,4.4vw,4.3rem)] font-semibold leading-[1] tracking-[-0.04em] text-[rgb(15,23,42)] xl:max-w-[50rem] xl:text-[3.1rem] xl:leading-[1.02] 2xl:max-w-[52rem] 2xl:text-[3.2rem]">
+            Cálculo, dimensionamento e consulta técnica em um fluxo contínuo de trabalho.
+          </h2>
+          <p className="max-w-none text-base leading-7 text-[rgb(71,85,105)] lg:max-w-3xl xl:max-w-[46rem] 2xl:max-w-[48rem]">
+            Reúna modelagem, visualização estrutural, verificações e acesso a normas em um ambiente pensado para
+            apoiar decisões de projeto com mais agilidade.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <Button
+            asChild
+            size="lg"
+            className="rounded-full bg-[rgb(15,23,42)] px-6 text-white shadow-[0_18px_40px_-24px_rgba(15,23,42,0.8)] hover:bg-[rgb(30,41,59)]"
+          >
+            <Link href="/dashboard/viga-concreto-armado">
+              Explorar dimensionamento
+              <ArrowRight />
+            </Link>
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            size="lg"
+            className="rounded-full border-[rgba(15,23,42,0.14)] bg-white/70 px-6 text-[rgb(15,23,42)] hover:bg-white"
+          >
+            <Link href="/dashboard/geometria">Abrir módulo de geometria</Link>
+          </Button>
+          <Button
+            asChild
+            variant="ghost"
+            size="lg"
+            className="rounded-full px-5 text-[rgb(15,23,42)] hover:bg-[rgba(15,23,42,0.05)]"
+          >
+            <a href="#variacoes">Ver variações</a>
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {trustPills.map((pill) => (
+            <span
+              key={pill}
+              className="rounded-full border border-[rgba(148,163,184,0.3)] bg-white/72 px-3 py-1.5 text-xs font-medium text-[rgb(51,65,85)] shadow-[0_10px_28px_-24px_rgba(15,23,42,0.4)]"
+            >
+              {pill}
+            </span>
+          ))}
+        </div>
       </div>
-      <p className="max-w-2xl text-sm leading-6 text-[rgb(71,85,105)]">{description}</p>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {heroHighlights.map(({ icon: Icon, title, description }) => (
+          <article
+            key={title}
+            className="rounded-3xl border border-white/70 bg-white/72 p-3.5 shadow-[0_20px_45px_-38px_rgba(15,23,42,0.45)] backdrop-blur"
+          >
+            <div className="mb-3 inline-flex rounded-2xl bg-[rgba(14,116,144,0.12)] p-2 text-[rgb(14,116,144)]">
+              <Icon className="size-4" />
+            </div>
+            <h3 className="text-sm font-semibold text-[rgb(15,23,42)]">{title}</h3>
+            <p className="mt-2 text-sm leading-6 text-[rgb(71,85,105)]">{description}</p>
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
 
-function DemoShell({ children }: { children: React.ReactNode }) {
+function AnalysisCard({ variant }: { variant: DemoVariant }) {
   return (
-    <section className="rounded-[2rem] border border-white/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(241,245,249,0.86))] p-5 shadow-[0_35px_80px_-55px_rgba(15,23,42,0.45)] md:p-7">
-      {children}
+    <div className="relative z-10">
+      <div
+        className={`relative overflow-hidden rounded-[2rem] border p-4 shadow-[0_45px_90px_-52px_rgba(15,23,42,0.82)] md:p-5 ${variant.panelClassName}`}
+      >
+        <div className={`pointer-events-none absolute inset-x-0 top-0 h-28 ${variant.topGlowClassName}`} />
+        <div
+          className={`pointer-events-none absolute -bottom-8 left-10 h-28 w-28 rounded-full blur-2xl ${variant.bottomGlowClassName}`}
+        />
+
+        <div className="relative">
+          <div
+            className={`mb-4 flex flex-wrap items-center justify-between gap-3 ${variant.headerWrapClassName ?? ''}`}
+          >
+            <div>
+              <p className={`text-xs font-semibold uppercase tracking-[0.28em] ${variant.eyebrowClassName}`}>
+                Análise em destaque
+              </p>
+              <h3 className={`mt-1 text-lg font-semibold ${variant.titleClassName ?? 'text-white'}`}>
+                Visualização estrutural aplicada
+              </h3>
+            </div>
+            <div className={`rounded-full border px-3 py-1 text-xs ${variant.badgeClassName}`}>Ambiente interativo</div>
+          </div>
+
+          <div
+            className={`rounded-[1.35rem] border p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_20px_40px_-28px_rgba(15,23,42,0.65)] ${variant.viewerShellClassName}`}
+          >
+            <HeroBeamMoment viewerHeightClassName="h-[300px] min-h-[300px] lg:h-[345px] lg:min-h-[345px] 2xl:h-[385px] 2xl:min-h-[385px]" />
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {variant.metaCards.map((item) => (
+              <div key={item.label} className={`rounded-2xl border p-3 ${item.className}`}>
+                <p className={`text-[11px] uppercase tracking-[0.24em] ${item.labelClassName}`}>{item.label}</p>
+                <p className="mt-1 text-sm font-medium">{item.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HeroVariantSection({ variant }: { variant: DemoVariant }) {
+  return (
+    <section
+      className="relative overflow-hidden rounded-[2rem] border-x border-t border-x-[rgba(203,213,225,0.24)] border-t-[rgba(203,213,225,0.28)] bg-[linear-gradient(135deg,rgba(255,255,255,0.95),rgba(243,247,250,0.94)_62%,rgba(232,239,245,0.98))] px-5 py-6 shadow-[0_32px_84px_-50px_rgba(15,23,42,0.42),0_28px_36px_-30px_rgba(148,163,184,0.42),inset_0_1px_0_rgba(255,255,255,0.24)] after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-12 after:bg-[linear-gradient(180deg,rgba(241,245,249,0),rgba(226,232,240,0.86))] md:px-8 md:py-8"
+    >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_top_left,rgba(14,116,144,0.16),transparent_58%)]" />
+      <div className="pointer-events-none absolute right-[-6rem] top-10 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(249,115,22,0.16),transparent_70%)] blur-2xl" />
+
+      <div className="relative z-20 mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[rgb(14,116,144)]">Variação {variant.id}</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[rgb(15,23,42)]">{variant.title}</h1>
+        </div>
+        <p className="max-w-2xl text-sm leading-6 text-[rgb(71,85,105)]">{variant.description}</p>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(460px,1.06fr)] xl:items-center">
+        <HeroTextBlock />
+        <AnalysisCard variant={variant} />
+      </div>
     </section>
   );
 }
@@ -162,14 +796,16 @@ function DemoShell({ children }: { children: React.ReactNode }) {
 export default function HeroSectionDemoPage() {
   return (
     <div className="min-h-screen bg-[rgb(246,247,251)]">
-      <div className="border-b border-white/70 bg-[rgba(246,247,251,0.86)] backdrop-blur">
+      <div className="border-b border-[rgba(226,232,240,0.74)] bg-[rgba(246,247,251,0.86)] backdrop-blur">
         <GridContainer className="max-w-[1440px] py-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-[0.26em] text-[rgb(14,116,144)]">Demo</p>
-              <h1 className="text-3xl font-semibold tracking-[-0.04em] text-[rgb(15,23,42)]">Hero Section Lab</h1>
+              <h1 className="text-3xl font-semibold tracking-[-0.04em] text-[rgb(15,23,42)]">
+                Laboratório de cor da hero
+              </h1>
               <p className="max-w-3xl text-sm leading-6 text-[rgb(71,85,105)]">
-                Cinco propostas para a area de Analise em destaque, sem tocar na homepage definitiva.
+                Quinze variações da seção de Análise em destaque para testar apenas a paleta desse painel.
               </p>
             </div>
 
@@ -183,274 +819,11 @@ export default function HeroSectionDemoPage() {
         </GridContainer>
       </div>
 
-      <main>
+      <main id="variacoes">
         <GridContainer className="max-w-[1440px] space-y-8 py-8 md:space-y-10 md:py-10">
-          <DemoShell>
-            <SectionHeader
-              index="01"
-              title="Preview escapando do container"
-              description="A area tecnica avanca alem do limite da moldura para ganhar presenca visual sem parecer so mais um card encaixado."
-            />
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] xl:items-center">
-              <div className="space-y-6">
-                <HeroCopyBlock />
-                <HighlightGrid />
-              </div>
-
-              <div className="relative xl:pl-8">
-                <div className="pointer-events-none absolute -right-6 -top-6 hidden h-20 w-20 rounded-full bg-[rgba(249,115,22,0.18)] blur-2xl xl:block" />
-                <div className="rounded-[2rem] border border-[rgba(15,23,42,0.08)] bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(30,41,59,0.95))] p-4 shadow-[0_45px_90px_-52px_rgba(15,23,42,0.9)] xl:translate-x-6">
-                  <div className="rounded-[1.6rem] border border-white/10 bg-[rgba(15,23,42,0.55)] p-4">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[rgba(191,219,254,0.76)]">
-                          Analise em destaque
-                        </p>
-                        <h3 className="mt-1 text-lg font-semibold text-white">Preview com escape</h3>
-                      </div>
-                      <span className="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs text-white/80">
-                        Hero principal
-                      </span>
-                    </div>
-                    <div className="rounded-[1.35rem] border border-white/10 bg-[rgba(248,250,252,0.96)] p-2">
-                      <HeroBeamMoment viewerHeightClassName="h-[320px] min-h-[320px] lg:h-[360px] lg:min-h-[360px]" />
-                    </div>
-                    <div className="mt-4">
-                      <MetaStrip />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </DemoShell>
-
-          <DemoShell>
-            <SectionHeader
-              index="02"
-              title="Shell simplificado"
-              description="Menos caixas empilhadas, mais leitura de um unico painel tecnico com viewer dominante e barra inferior condensada."
-            />
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:items-center">
-              <div className="space-y-6">
-                <HeroCopyBlock />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <article className="rounded-3xl border border-white/70 bg-white/78 p-4">
-                    <div className="mb-3 inline-flex rounded-2xl bg-[rgba(14,116,144,0.12)] p-2 text-[rgb(14,116,144)]">
-                      <Workflow className="size-4" />
-                    </div>
-                    <h3 className="text-sm font-semibold text-[rgb(15,23,42)]">Menos moldura, mais conteudo</h3>
-                    <p className="mt-2 text-sm leading-6 text-[rgb(71,85,105)]">
-                      A experiencia fica mais limpa quando o painel tecnico nao precisa simular tantos niveis.
-                    </p>
-                  </article>
-                  <article className="rounded-3xl border border-white/70 bg-white/78 p-4">
-                    <div className="mb-3 inline-flex rounded-2xl bg-[rgba(15,23,42,0.08)] p-2 text-[rgb(15,23,42)]">
-                      <Layers3 className="size-4" />
-                    </div>
-                    <h3 className="text-sm font-semibold text-[rgb(15,23,42)]">Barra inferior enxuta</h3>
-                    <p className="mt-2 text-sm leading-6 text-[rgb(71,85,105)]">
-                      Metadados condensados em uma unica faixa, com mais cara de software tecnico.
-                    </p>
-                  </article>
-                </div>
-              </div>
-
-              <div className="rounded-[2rem] border border-[rgba(15,23,42,0.08)] bg-[linear-gradient(180deg,rgba(15,23,42,0.99),rgba(30,41,59,0.94))] p-4 shadow-[0_45px_90px_-52px_rgba(15,23,42,0.9)]">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[rgba(191,219,254,0.76)]">
-                      Workspace tecnico
-                    </p>
-                    <h3 className="mt-1 text-lg font-semibold text-white">Um painel so</h3>
-                  </div>
-                  <span className="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs text-white/80">
-                    Estrutura simplificada
-                  </span>
-                </div>
-                <div className="rounded-[1.4rem] border border-white/10 bg-[rgba(248,250,252,0.97)] p-2">
-                  <HeroBeamMoment viewerHeightClassName="h-[340px] min-h-[340px] lg:h-[390px] lg:min-h-[390px]" />
-                </div>
-                <div className="mt-4 grid gap-2 rounded-[1.4rem] border border-white/10 bg-white/6 p-3 text-white/88 sm:grid-cols-3">
-                  {metaItems.map((item) => (
-                    <div key={item.label}>
-                      <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">{item.label}</p>
-                      <p className="mt-1 text-sm font-medium">{item.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </DemoShell>
-
-          <DemoShell>
-            <SectionHeader
-              index="03"
-              title="Workspace dominante"
-              description="O painel tecnico vira protagonista e o texto comercial passa a atuar como introducao lateral mais enxuta."
-            />
-            <div className="grid gap-6 xl:grid-cols-[minmax(340px,0.75fr)_minmax(0,1.25fr)] xl:items-center">
-              <div className="space-y-6 rounded-[1.8rem] border border-white/70 bg-white/78 p-5">
-                <div className="inline-flex rounded-full border border-[rgba(14,116,144,0.18)] bg-[rgba(14,116,144,0.08)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-[rgb(14,116,144)]">
-                  Workspace dominante
-                </div>
-                <h2 className="text-4xl font-semibold tracking-[-0.04em] text-[rgb(15,23,42)]">
-                  Uma tela para ver, explorar e decidir.
-                </h2>
-                <p className="text-base leading-7 text-[rgb(71,85,105)]">
-                  Quando o preview tecnico domina o hero, a homepage passa a parecer mais proxima do produto em uso.
-                </p>
-                <div className="space-y-3">
-                  {[
-                    { icon: Ruler, label: 'Dimensionamento orientado a fluxo' },
-                    { icon: Network, label: 'Visualizacao e leitura do modelo' },
-                    { icon: BookOpen, label: 'Normas e memoriais ao redor do processo' },
-                  ].map(({ icon: Icon, label }) => (
-                    <div key={label} className="flex items-center gap-3 rounded-2xl border border-[rgba(148,163,184,0.2)] bg-white/82 px-4 py-3">
-                      <div className="rounded-xl bg-[rgba(14,116,144,0.12)] p-2 text-[rgb(14,116,144)]">
-                        <Icon className="size-4" />
-                      </div>
-                      <p className="text-sm font-medium text-[rgb(15,23,42)]">{label}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-[2rem] border border-[rgba(15,23,42,0.08)] bg-[linear-gradient(180deg,rgba(15,23,42,0.99),rgba(30,41,59,0.95))] p-4 shadow-[0_45px_90px_-52px_rgba(15,23,42,0.9)]">
-                <div className="mb-4 flex items-center justify-between gap-3 rounded-[1.35rem] border border-white/10 bg-white/6 px-4 py-3 text-white/85">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">Modo de apresentacao</p>
-                    <p className="mt-1 text-sm font-medium">Viewer dominante</p>
-                  </div>
-                  <div className="inline-flex rounded-full border border-white/10 bg-white/8 px-3 py-1 text-xs">
-                    Pronto para explorar
-                  </div>
-                </div>
-                <div className="rounded-[1.35rem] border border-white/10 bg-[rgba(248,250,252,0.97)] p-2">
-                  <HeroBeamMoment viewerHeightClassName="h-[360px] min-h-[360px] lg:h-[440px] lg:min-h-[440px]" />
-                </div>
-              </div>
-            </div>
-          </DemoShell>
-
-          <DemoShell>
-            <SectionHeader
-              index="04"
-              title="Composicao assimetrica"
-              description="A area de analise se desloca, recebe badges flutuantes e quebra a simetria para parecer mais autoral."
-            />
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-center">
-              <div className="space-y-6">
-                <HeroCopyBlock />
-                <div className="rounded-[1.8rem] border border-white/70 bg-white/78 p-4">
-                  <HighlightGrid />
-                </div>
-              </div>
-
-              <div className="relative xl:pl-10">
-                <div className="pointer-events-none absolute left-4 top-6 hidden rounded-full border border-[rgba(14,116,144,0.18)] bg-white/88 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-[rgb(14,116,144)] xl:block">
-                  Analise ao vivo
-                </div>
-                <div className="pointer-events-none absolute -right-4 top-16 hidden rounded-full border border-[rgba(249,115,22,0.2)] bg-[rgba(249,115,22,0.1)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-[rgb(154,52,18)] xl:block">
-                  Painel flutuante
-                </div>
-                <div className="rounded-[2.1rem] border border-[rgba(15,23,42,0.08)] bg-[linear-gradient(160deg,rgba(15,23,42,0.98),rgba(30,41,59,0.92))] p-4 shadow-[0_50px_100px_-58px_rgba(15,23,42,0.9)] xl:translate-x-4 xl:-rotate-[1.2deg]">
-                  <div className="rounded-[1.5rem] border border-white/10 bg-[rgba(255,255,255,0.04)] p-3 xl:rotate-[1.2deg]">
-                    <div className="rounded-[1.35rem] border border-white/10 bg-[rgba(248,250,252,0.97)] p-2">
-                      <HeroBeamMoment viewerHeightClassName="h-[320px] min-h-[320px] lg:h-[370px] lg:min-h-[370px]" />
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      {[
-                        'Leitura visual imediata',
-                        'Detalhes tecnicos em foco',
-                        'Mais presenca no hero',
-                      ].map((item) => (
-                        <span
-                          key={item}
-                          className="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs font-medium text-white/85"
-                        >
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </DemoShell>
-
-          <DemoShell>
-            <SectionHeader
-              index="05"
-              title="Viewer separado das informacoes"
-              description="O preview tecnico deixa de carregar sozinho o resto das informacoes e passa a conviver com um painel secundario independente."
-            />
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_320px] xl:items-start">
-              <div className="space-y-6">
-                <HeroCopyBlock />
-                <div className="rounded-[2rem] border border-[rgba(15,23,42,0.08)] bg-[linear-gradient(180deg,rgba(15,23,42,0.99),rgba(30,41,59,0.95))] p-4 shadow-[0_45px_90px_-52px_rgba(15,23,42,0.9)]">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[rgba(191,219,254,0.76)]">
-                        Viewer principal
-                      </p>
-                      <h3 className="mt-1 text-lg font-semibold text-white">Preview isolado</h3>
-                    </div>
-                    <span className="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs text-white/80">
-                      Painel independente
-                    </span>
-                  </div>
-                  <div className="rounded-[1.35rem] border border-white/10 bg-[rgba(248,250,252,0.97)] p-2">
-                    <HeroBeamMoment viewerHeightClassName="h-[340px] min-h-[340px] lg:h-[390px] lg:min-h-[390px]" />
-                  </div>
-                </div>
-              </div>
-
-              <aside className="space-y-4 rounded-[2rem] border border-white/70 bg-white/82 p-5 shadow-[0_30px_70px_-52px_rgba(15,23,42,0.4)]">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[rgb(14,116,144)]">Painel lateral</p>
-                  <h3 className="mt-2 text-xl font-semibold text-[rgb(15,23,42)]">Contexto tecnico</h3>
-                </div>
-
-                <div className="space-y-3">
-                  {[
-                    {
-                      icon: Layers3,
-                      title: 'Leitura modular',
-                      description: 'O preview visual fica livre para dominar o hero, enquanto os dados vivem em um painel proprio.',
-                    },
-                    {
-                      icon: Workflow,
-                      title: 'Mais flexibilidade',
-                      description: 'Voce pode testar ordem, densidade e prioridade da informacao sem mexer no viewer.',
-                    },
-                    {
-                      icon: Network,
-                      title: 'Boa base para evolucao',
-                      description: 'Essa estrutura facilita levar a mesma linguagem para dashboards e modulos futuros.',
-                    },
-                  ].map(({ icon: Icon, title, description }) => (
-                    <article
-                      key={title}
-                      className="rounded-[1.35rem] border border-[rgba(148,163,184,0.18)] bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(248,250,252,0.9))] p-4"
-                    >
-                      <div className="mb-3 inline-flex rounded-2xl bg-[rgba(15,23,42,0.06)] p-2 text-[rgb(14,116,144)]">
-                        <Icon className="size-4" />
-                      </div>
-                      <h4 className="text-sm font-semibold text-[rgb(15,23,42)]">{title}</h4>
-                      <p className="mt-2 text-sm leading-6 text-[rgb(71,85,105)]">{description}</p>
-                    </article>
-                  ))}
-                </div>
-
-                <Button asChild className="w-full rounded-full bg-[rgb(15,23,42)] text-white hover:bg-[rgb(30,41,59)]">
-                  <Link href="/dashboard/portico-plano">
-                    Explorar estrutura semelhante
-                    <ArrowRight />
-                  </Link>
-                </Button>
-              </aside>
-            </div>
-          </DemoShell>
+          {demoVariants.map((variant) => (
+            <HeroVariantSection key={variant.id} variant={variant} />
+          ))}
         </GridContainer>
       </main>
     </div>
