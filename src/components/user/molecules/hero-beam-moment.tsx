@@ -58,7 +58,13 @@ const heroPayload = {
 
 const BEAM2D_SYSTEM_PROXY_PATH = '/api/beam2d/system';
 
-export function HeroBeamMoment({ className = '' }: { className?: string }) {
+export function HeroBeamMoment({
+  className = '',
+  viewerHeightClassName = 'h-[420px] min-h-[420px]',
+}: {
+  className?: string;
+  viewerHeightClassName?: string;
+}) {
   const [modoVisualizacao, setModoVisualizacao] = useState<'cargas' | 'cortante' | 'momento'>('momento');
   const [tipoVista, setTipoVista] = useState<'3d' | '2d'>('3d');
   const [resultadoProcessamento, setResultadoProcessamento] = useState<unknown | null>(null);
@@ -182,10 +188,10 @@ export function HeroBeamMoment({ className = '' }: { className?: string }) {
           showResetControl={false}
           autoRotate
           autoRotateSpeed={0.6}
-          className="h-[420px] min-h-[420px]"
+          className={viewerHeightClassName}
         />
       ) : (
-        <div className="h-[420px] min-h-[420px] rounded-lg border border-border bg-muted/10 p-2 overflow-hidden">
+        <div className={`${viewerHeightClassName} overflow-hidden rounded-lg border border-border bg-muted/10 p-2`}>
           <Beam2DViewer
             pilares={pilares}
             vigas={vigas}

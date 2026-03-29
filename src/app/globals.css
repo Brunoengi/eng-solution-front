@@ -81,6 +81,11 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --home-canvas: rgb(246 247 251);
+  --home-ink: rgb(15 23 42);
+  --home-muted-ink: rgb(71 85 105);
+  --home-blueprint: rgb(14 116 144);
+  --home-signal: rgb(249 115 22);
 }
 
 .dark {
@@ -118,22 +123,50 @@
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
-    @apply bg-background text-foreground overflow-x-hidden;
+    @apply overflow-x-hidden bg-background text-foreground;
   }
 }
 
-/* Forçar largura do sidebar */
 @layer components {
+  .home-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(14, 116, 144, 0.18);
+    background: rgba(255, 255, 255, 0.7);
+    padding: 0.45rem 0.95rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--home-blueprint);
+  }
+
+  .home-grid-pattern {
+    background-image:
+      linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+      linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92));
+    background-size: 38px 38px, 38px 38px, 100% 100%;
+    background-position: center;
+  }
+
   [data-sidebar="sidebar"] {
     width: 18rem !important;
     min-width: 18rem !important;
     max-width: 18rem !important;
   }
-  
+
   .group\/sidebar-wrapper [style*="--sidebar-width"] {
     --sidebar-width: 18rem !important;
   }

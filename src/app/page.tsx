@@ -1,42 +1,28 @@
-import { Header } from '../components/user/layout/header';
 import { GridContainer } from '../components/user/layout/grid-layout';
-import { Button } from '@/components/ui/button';
-import { HeroBeamMoment } from '@/components/user/molecules/hero-beam-moment';
+import { Header } from '../components/user/layout/header';
+import { HomeApiStandards } from '@/components/user/molecules/home-api-standards';
+import { HomeFinalCta } from '@/components/user/molecules/home-final-cta';
+import { HomeHero } from '@/components/user/molecules/home-hero';
+import { HomeModulesGrid } from '@/components/user/molecules/home-modules-grid';
+import { HomeTrustStrip } from '@/components/user/molecules/home-trust-strip';
+import { HomeWorkflow } from '@/components/user/molecules/home-workflow';
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="relative flex min-h-screen flex-col overflow-hidden bg-[rgb(246,247,251)]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[34rem] bg-[radial-gradient(circle_at_top_left,rgba(14,116,144,0.16),transparent_42%),radial-gradient(circle_at_top_right,rgba(249,115,22,0.12),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.4),transparent)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(rgba(148,163,184,0.06)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.55),transparent_78%)]" />
       <Header />
-      <main className="flex-1">
-        <GridContainer className="max-w-[1440px] py-12">
-          <section className="mb-10 rounded-xl border border-border bg-card/50 p-4 md:p-6">
-            <div className="grid grid-cols-1 items-center gap-6 lg:grid-cols-5">
-              <div className="lg:col-span-2">
-                <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary">Engenharia Estrutural</p>
-                <h1 className="text-3xl font-bold text-foreground md:text-4xl">
-                  Tecnologias para engenharia estrutural
-                </h1>
-                <p className="mt-3 text-base text-muted-foreground">
-                  Automatize memoriais de cálculo, dimensione baseado nas normas vigentes, consuma nossas APIs para desenvolver suas próprias soluções.
-                </p>
-                <div className="mt-5 flex items-center gap-3">
-                  <Button asChild>
-                    <a href="/dashboard/geometria">Abrir módulo de Geometria</a>
-                  </Button>
-                  <Button variant="outline" asChild>
-                    <a href="/dashboard/viga-concreto-armado">Explorar Dimensionamento</a>
-                  </Button>
-                  <Button variant="outline" asChild>
-                    <a href="/dashboard/normas">Biblioteca de Normas</a>
-                  </Button>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-border bg-background/80 p-2 lg:col-span-3">
-                <HeroBeamMoment />
-              </div>
-            </div>
-          </section>
+      <main className="relative z-10 flex-1">
+        <GridContainer className="max-w-[1440px] space-y-6 pb-16 pt-4 md:space-y-8 md:pb-24 md:pt-5">
+          <div className="flex min-h-[calc(100svh-6.5rem)] items-center xl:min-h-[calc(100svh-7rem)]">
+            <HomeHero />
+          </div>
+          <HomeTrustStrip />
+          <HomeModulesGrid />
+          <HomeWorkflow />
+          <HomeApiStandards />
+          <HomeFinalCta />
         </GridContainer>
       </main>
     </div>
