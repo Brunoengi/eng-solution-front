@@ -40,6 +40,12 @@ const apiGroups = [
         href: '/dashboard/portico-plano',
         icon: DraftingCompass,
       },
+      {
+        label: 'Pórtico espacial',
+        description: 'Fluxo 3D com vínculos por GDL, visualização híbrida e diagramas.',
+        href: '/dashboard/portico-espacial',
+        icon: Boxes,
+      },
     ],
   },
   {

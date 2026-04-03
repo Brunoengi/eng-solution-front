@@ -9,33 +9,76 @@ import { StyledInlineSelect } from '@/components/user/molecules/styled-inline-se
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SelectItem } from '@/components/ui/select';
-import { SidebarProvider } from '@/components/ui/sidebar';
+import { SidebarProvider, useSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  FRAME2D_INPUT_UNITS,
   buildFramePorticoSnapshot,
   getReplicableNodeIdsForElements,
   loadFramePorticoSnapshot,
   replicateFrameGeometry,
   saveFramePorticoSnapshot,
   syncSupportPresets,
+  createFrameSupportRestrictions,
   type FrameElementInput,
   type FrameLoadInput,
   type FrameMaterialInput,
   type FrameNodeInput,
   type FramePorticoSnapshot,
   type FrameSupportMap,
-  type FrameSupportPreset,
+  type FrameSupportRestrictionKey,
   type FrameViewMode,
 } from '@/features/portico-plano/model';
 import { cn } from '@/lib/utils';
-import { Anchor, Eye, Layers, Plus, Trash2, Waves } from 'lucide-react';
+import {
+  Anchor,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  FlaskConical,
+  Layers,
+  Plus,
+  Trash2,
+  Waves,
+} from 'lucide-react';
 
 const FRAME2D_SYSTEM_PROXY_PATH = '/api/frame2d/system';
 
 type InputMode = 'geometry' | 'supports' | 'materials' | 'loads';
 type HeaderMode = 'visualizar' | 'modificar';
+type SecondaryDock = 'none' | 'examples';
+
+type Frame2DEditorState = {
+  nodes: FrameNodeInput[];
+  materials: FrameMaterialInput[];
+  elements: FrameElementInput[];
+  supports: FrameSupportMap;
+  loads: FrameLoadInput[];
+};
+
+type Frame2DExamplePreset = {
+  id: string;
+  title: string;
+  description: string;
+  reference: string;
+  state: Frame2DEditorState;
+};
 
 const makeId = () => Math.random().toString(36).slice(2, 9);
+const restraints = (
+  dx = false,
+  dy = false,
+  rz = false,
+) => createFrameSupportRestrictions({ dx, dy, rz });
+const SUPPORT_RESTRICTION_OPTIONS: Array<{
+  key: FrameSupportRestrictionKey;
+  label: string;
+  description: string;
+}> = [
+  { key: 'dx', label: 'Dx', description: 'Translacao em X' },
+  { key: 'dy', label: 'Dy', description: 'Translacao em Y' },
+  { key: 'rz', label: 'Rz', description: 'Rotacao em Z' },
+];
 
 function createDefaultState() {
   const n1 = makeId();
@@ -62,18 +105,402 @@ function createDefaultState() {
   return { nodes, materials, elements, supports, loads };
 }
 
-function supportLabel(preset: FrameSupportPreset) {
-  switch (preset) {
-    case 'engaste':
-      return 'Engaste';
-    case 'articulado':
-      return 'Articulado';
-    case 'movel-vertical':
-      return 'Movel vertical';
-    case 'livre':
-    default:
-      return 'Livre';
+const FRAME2D_EXAMPLES: Frame2DExamplePreset[] = [
+  {
+    id: 'galpao-duas-aguas',
+    title: 'Exemplo 1 - Galpao industrial',
+    description:
+      'Galpao com quatro pilares, cobertura em duas aguas, cargas verticais distribuidas e vento horizontal nos beirais.',
+    reference: 'Caso editorial para verificar cobertura inclinada e multiplos apoios.',
+    state: {
+      nodes: [
+        { id: 'n1', x: '0', y: '0' },
+        { id: 'n2', x: '6', y: '0' },
+        { id: 'n3', x: '12', y: '0' },
+        { id: 'n4', x: '18', y: '0' },
+        { id: 'n5', x: '0', y: '7' },
+        { id: 'n6', x: '6', y: '9' },
+        { id: 'n7', x: '12', y: '9' },
+        { id: 'n8', x: '18', y: '7' },
+      ],
+      materials: [
+        { id: 'm1', name: 'Pilares metalicos', E: '200000', A: '180', I: '95000' },
+        { id: 'm2', name: 'Cobertura metalica', E: '200000', A: '140', I: '62000' },
+      ],
+      elements: [
+        { id: 'e1', nodeI: 'n1', nodeJ: 'n5', materialId: 'm1' },
+        { id: 'e2', nodeI: 'n2', nodeJ: 'n6', materialId: 'm1' },
+        { id: 'e3', nodeI: 'n3', nodeJ: 'n7', materialId: 'm1' },
+        { id: 'e4', nodeI: 'n4', nodeJ: 'n8', materialId: 'm1' },
+        { id: 'e5', nodeI: 'n5', nodeJ: 'n6', materialId: 'm2' },
+        { id: 'e6', nodeI: 'n6', nodeJ: 'n7', materialId: 'm2' },
+        { id: 'e7', nodeI: 'n7', nodeJ: 'n8', materialId: 'm2' },
+      ],
+      supports: {
+        n1: restraints(true, true, true),
+        n2: restraints(true, true, false),
+        n3: restraints(true, true, false),
+        n4: restraints(true, true, true),
+        n5: restraints(),
+        n6: restraints(),
+        n7: restraints(),
+        n8: restraints(),
+      },
+      loads: [
+        {
+          id: 'l1',
+          type: 'distributed',
+          elementId: 'e5',
+          coordinateSystem: 'global',
+          qx: '0',
+          qy: '-18',
+        },
+        {
+          id: 'l2',
+          type: 'distributed',
+          elementId: 'e6',
+          coordinateSystem: 'global',
+          qx: '0',
+          qy: '-22',
+        },
+        {
+          id: 'l3',
+          type: 'distributed',
+          elementId: 'e7',
+          coordinateSystem: 'global',
+          qx: '0',
+          qy: '-18',
+        },
+        {
+          id: 'l4',
+          type: 'nodal',
+          nodeId: 'n5',
+          fx: '18',
+          fy: '0',
+          mz: '0',
+        },
+        {
+          id: 'l5',
+          type: 'nodal',
+          nodeId: 'n8',
+          fx: '18',
+          fy: '0',
+          mz: '0',
+        },
+      ],
+    },
+  },
+  {
+    id: 'edificio-tres-pavimentos',
+    title: 'Exemplo 2 - Edificio 3 pavimentos',
+    description:
+      'Portico de tres pavimentos e dois vaos, com pilares e vigas diferentes, sobrecargas de piso e acao lateral no topo.',
+    reference: 'Caso editorial para exercitar hiperestaticidade, varios materiais e varios pavimentos.',
+    state: {
+      nodes: [
+        { id: 'n1', x: '0', y: '0' },
+        { id: 'n2', x: '6', y: '0' },
+        { id: 'n3', x: '12', y: '0' },
+        { id: 'n6', x: '12', y: '4' },
+        { id: 'n5', x: '6', y: '4' },
+        { id: 'n4', x: '0', y: '4' },
+        { id: 'n7', x: '0', y: '8' },
+        { id: 'n8', x: '6', y: '8' },
+        { id: 'n9', x: '12', y: '8' },
+        { id: 'n10', x: '0', y: '12' },
+        { id: 'n11', x: '6', y: '12' },
+        { id: 'n12', x: '12', y: '12' },
+      ],
+      materials: [
+        { id: 'm1', name: 'Pilares CA', E: '30000', A: '3200', I: '280000' },
+        { id: 'm2', name: 'Vigas CA', E: '30000', A: '2600', I: '210000' },
+      ],
+      elements: [
+        { id: 'e1', nodeI: 'n1', nodeJ: 'n4', materialId: 'm1' },
+        { id: 'e2', nodeI: 'n4', nodeJ: 'n7', materialId: 'm1' },
+        { id: 'e3', nodeI: 'n7', nodeJ: 'n10', materialId: 'm1' },
+        { id: 'e4', nodeI: 'n2', nodeJ: 'n5', materialId: 'm1' },
+        { id: 'e5', nodeI: 'n5', nodeJ: 'n8', materialId: 'm1' },
+        { id: 'e6', nodeI: 'n8', nodeJ: 'n11', materialId: 'm1' },
+        { id: 'e7', nodeI: 'n3', nodeJ: 'n6', materialId: 'm1' },
+        { id: 'e8', nodeI: 'n6', nodeJ: 'n9', materialId: 'm1' },
+        { id: 'e9', nodeI: 'n9', nodeJ: 'n12', materialId: 'm1' },
+        { id: 'e14', nodeI: 'n10', nodeJ: 'n11', materialId: 'm2' },
+        { id: 'e15', nodeI: 'n11', nodeJ: 'n12', materialId: 'm2' },
+        { id: 'e12', nodeI: 'n7', nodeJ: 'n8', materialId: 'm2' },
+        { id: 'e13', nodeI: 'n8', nodeJ: 'n9', materialId: 'm2' },
+        { id: 'e10', nodeI: 'n4', nodeJ: 'n5', materialId: 'm2' },
+        { id: 'e11', nodeI: 'n5', nodeJ: 'n6', materialId: 'm2' },
+      ],
+      supports: {
+        n1: restraints(true, true, true),
+        n2: restraints(true, true, true),
+        n3: restraints(true, true, true),
+        n4: restraints(),
+        n5: restraints(),
+        n6: restraints(),
+        n7: restraints(),
+        n8: restraints(),
+        n9: restraints(),
+        n10: restraints(),
+        n11: restraints(),
+        n12: restraints(),
+      },
+      loads: [
+        {
+          id: 'l5',
+          type: 'distributed',
+          elementId: 'e14',
+          coordinateSystem: 'global',
+          qx: '0',
+          qy: '-12',
+        },
+        {
+          id: 'l6',
+          type: 'distributed',
+          elementId: 'e15',
+          coordinateSystem: 'global',
+          qx: '0',
+          qy: '-12',
+        },
+        {
+          id: 'l3',
+          type: 'distributed',
+          elementId: 'e12',
+          coordinateSystem: 'global',
+          qx: '0',
+          qy: '-18',
+        },
+        {
+          id: 'l4',
+          type: 'distributed',
+          elementId: 'e13',
+          coordinateSystem: 'global',
+          qx: '0',
+          qy: '-18',
+        },
+        {
+          id: 'l1',
+          type: 'distributed',
+          elementId: 'e10',
+          coordinateSystem: 'global',
+          qx: '0',
+          qy: '-24',
+        },
+        {
+          id: 'l2',
+          type: 'distributed',
+          elementId: 'e11',
+          coordinateSystem: 'global',
+          qx: '0',
+          qy: '-24',
+        },
+        {
+          id: 'l7',
+          type: 'nodal',
+          nodeId: 'n10',
+          fx: '22',
+          fy: '0',
+          mz: '0',
+        },
+        {
+          id: 'l8',
+          type: 'nodal',
+          nodeId: 'n11',
+          fx: '28',
+          fy: '0',
+          mz: '0',
+        },
+        {
+          id: 'l9',
+          type: 'nodal',
+          nodeId: 'n12',
+          fx: '22',
+          fy: '0',
+          mz: '0',
+        },
+      ],
+    },
+  },
+  {
+    id: 'marquise-inclinada',
+    title: 'Exemplo 3 - Marquise com trecho inclinado',
+    description:
+      'Portico assimetrico com viga inclinada, combinando cargas distribuidas globais e locais para inspecionar a conversao de base.',
+    reference:
+      'Caso calibrado a partir do LESM para verificar a equivalencia entre entrada vetorial global e local no frame2D.',
+    state: {
+      nodes: [
+        { id: 'n1', x: '0', y: '0' },
+        { id: 'n2', x: '0', y: '5' },
+        { id: 'n3', x: '6', y: '5' },
+        { id: 'n4', x: '11', y: '8' },
+        { id: 'n5', x: '16', y: '8' },
+        { id: 'n6', x: '16', y: '0' },
+      ],
+      materials: [
+        { id: 'm1', name: 'Pilares e vigas principais', E: '100000', A: '2400', I: '180000' },
+        { id: 'm2', name: 'Trecho inclinado', E: '210000', A: '160', I: '72000' },
+      ],
+      elements: [
+        { id: 'e1', nodeI: 'n1', nodeJ: 'n2', materialId: 'm1' },
+        { id: 'e2', nodeI: 'n2', nodeJ: 'n3', materialId: 'm1' },
+        { id: 'e3', nodeI: 'n4', nodeJ: 'n5', materialId: 'm1' },
+        { id: 'e4', nodeI: 'n6', nodeJ: 'n5', materialId: 'm1' },
+        { id: 'e5', nodeI: 'n3', nodeJ: 'n4', materialId: 'm2' },
+      ],
+      supports: {
+        n1: restraints(true, true, true),
+        n2: restraints(),
+        n3: restraints(),
+        n4: restraints(),
+        n5: restraints(),
+        n6: restraints(true, true, false),
+      },
+      loads: [
+        {
+          id: 'l1',
+          type: 'distributed',
+          elementId: 'e2',
+          coordinateSystem: 'global',
+          qx: '0',
+          qy: '-14',
+        },
+        {
+          id: 'l2',
+          type: 'distributed',
+          elementId: 'e5',
+          coordinateSystem: 'local',
+          qx: '4',
+          qy: '-10',
+        },
+        {
+          id: 'l3',
+          type: 'distributed',
+          elementId: 'e3',
+          coordinateSystem: 'global',
+          qx: '0',
+          qy: '-9',
+        },
+        {
+          id: 'l4',
+          type: 'nodal',
+          nodeId: 'n4',
+          fx: '12',
+          fy: '-8',
+          mz: '0',
+        },
+      ],
+    },
+  },
+];
+
+function distributedLoadCoordinateSystemLabel(mode: 'global' | 'local') {
+  return mode === 'global' ? 'Global' : 'Local';
+}
+
+function supportRestrictionSummary(supports: FrameSupportMap[string]) {
+  const active = SUPPORT_RESTRICTION_OPTIONS.filter(
+    (option) => supports[option.key],
+  ).map((option) => option.label);
+
+  return active.length > 0 ? active.join(' + ') : 'Livre';
+}
+
+function cloneEditorState(state: Frame2DEditorState): Frame2DEditorState {
+  return {
+    nodes: state.nodes.map((node) => ({ ...node })),
+    materials: state.materials.map((material) => ({ ...material })),
+    elements: state.elements.map((element) => ({ ...element })),
+    supports: Object.fromEntries(
+      Object.entries(state.supports).map(([nodeId, support]) => [nodeId, support]),
+    ),
+    loads: state.loads.map((load) => ({ ...load })),
+  };
+}
+
+function CloseDockOnSidebarCollapse({ onCollapse }: { onCollapse: () => void }) {
+  const { state } = useSidebar();
+
+  useEffect(() => {
+    if (state === 'collapsed') {
+      onCollapse();
+    }
+  }, [onCollapse, state]);
+
+  return null;
+}
+
+function ExamplesDockPanel({
+  open,
+  onClose,
+  examples,
+  activeExampleId,
+  onApply,
+}: {
+  open: boolean;
+  onClose: () => void;
+  examples: Frame2DExamplePreset[];
+  activeExampleId: string | null;
+  onApply: (exampleId: string) => void;
+}) {
+  const { state } = useSidebar();
+
+  if (!open) {
+    return null;
   }
+
+  return (
+    <aside
+      className={`fixed top-0 z-50 h-svh w-[18rem] border border-border/60 bg-gradient-to-b from-card via-card to-card/95 shadow-2xl backdrop-blur-sm transition-all ${
+        state === 'expanded' ? 'left-[18rem]' : 'left-[3rem]'
+      }`}
+      aria-label="Exemplos de portico plano"
+    >
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className="min-h-[125px] border-b border-border/70 bg-card/90 p-6 pb-8 pt-8 backdrop-blur">
+          <div className="flex items-start justify-between gap-2">
+            <p className="flex-1 text-sm text-muted-foreground">
+              Selecione um exemplo completo para preencher geometria, apoios, materiais e carregamentos automaticamente.
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-xl border border-border/70 bg-background/90 text-foreground shadow-sm backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent/80 hover:shadow"
+              onClick={onClose}
+              aria-label="Fechar exemplos"
+            >
+              {state === 'expanded' ? <ChevronLeft /> : <ChevronRight />}
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex-1 space-y-3 overflow-y-auto p-4 text-xs">
+          {examples.map((example) => {
+            const isActive = activeExampleId === example.id;
+
+            return (
+              <section
+                key={example.id}
+                className={cn(
+                  'space-y-2 rounded-xl border bg-background/60 p-3 shadow-sm backdrop-blur-sm',
+                  isActive ? 'border-sky-300 ring-1 ring-sky-200' : 'border-border/70',
+                )}
+              >
+                <h3 className="text-sm font-semibold text-foreground">{example.title}</h3>
+                <p className="text-muted-foreground">{example.description}</p>
+                <p className="text-[11px] text-slate-500">Origem: {example.reference}</p>
+                <Button type="button" size="sm" className="w-full" onClick={() => onApply(example.id)}>
+                  Carregar exemplo
+                </Button>
+              </section>
+            );
+          })}
+        </div>
+      </div>
+    </aside>
+  );
 }
 
 export default function PorticoPlanoPage() {
@@ -89,6 +516,8 @@ export default function PorticoPlanoPage() {
   const [viewMode, setViewMode] = useState<FrameViewMode>('carregamentos');
   const [responseScale, setResponseScale] = useState(1);
   const [inputMode, setInputMode] = useState<InputMode>('geometry');
+  const [secondaryDock, setSecondaryDock] = useState<SecondaryDock>('none');
+  const [activeExampleId, setActiveExampleId] = useState<string | null>(null);
   const [headerMode, setHeaderMode] = useState<HeaderMode>('visualizar');
   const [replicateElementIds, setReplicateElementIds] = useState<string[]>([]);
   const [replicateSourceNodeId, setReplicateSourceNodeId] = useState('');
@@ -292,7 +721,9 @@ export default function PorticoPlanoPage() {
         id: makeId(),
         type: 'distributed',
         elementId: '',
-        q: '',
+        coordinateSystem: 'global',
+        qx: '',
+        qy: '',
       },
     ]);
   };
@@ -335,6 +766,33 @@ export default function PorticoPlanoPage() {
         text: error instanceof Error ? error.message : 'Nao foi possivel replicar a geometria.',
       });
     }
+  };
+
+  const applyExample = (exampleId: string) => {
+    const selectedExample = FRAME2D_EXAMPLES.find((example) => example.id === exampleId);
+    if (!selectedExample) {
+      return;
+    }
+
+    const next = cloneEditorState(selectedExample.state);
+
+    setNodes(next.nodes);
+    setMaterials(next.materials);
+    setElements(next.elements);
+    setSupports(syncSupportPresets(next.nodes, next.supports));
+    setLoads(next.loads);
+    setProcessedSnapshot(null);
+    setProcessingMessage(
+      `Exemplo "${selectedExample.title}" carregado. Clique em "Processar estrutura" para verificar os resultados.`,
+    );
+    setReplicationFeedback(null);
+    setReplicateElementIds([]);
+    setReplicateSourceNodeId('');
+    setReplicateDestinationNodeId('');
+    setInputMode('geometry');
+    setHeaderMode('visualizar');
+    setActiveExampleId(exampleId);
+    setSecondaryDock('none');
   };
 
   const processarEstrutura = async () => {
@@ -390,11 +848,34 @@ export default function PorticoPlanoPage() {
     }
   };
 
+  const examplesItems: MenuItem[] = [
+    {
+      label: 'Casos de teste',
+      icon: FlaskConical,
+      onClick: () => setSecondaryDock('examples'),
+      isActive: secondaryDock === 'examples',
+    },
+  ];
+
   return (
     <SidebarProvider defaultOpen={false}>
+      <CloseDockOnSidebarCollapse onCollapse={() => setSecondaryDock('none')} />
       <SidebarToggleButton />
       <div className="flex w-full">
-        <AppSidebar menuItems={menuItems} menuGroupLabel="Secao Principal" exitHref="/" />
+        <AppSidebar
+          menuItems={menuItems}
+          configItems={examplesItems}
+          menuGroupLabel="Secao Principal"
+          configGroupLabel="Exemplos"
+          exitHref="/"
+        />
+        <ExamplesDockPanel
+          open={secondaryDock === 'examples'}
+          onClose={() => setSecondaryDock('none')}
+          examples={FRAME2D_EXAMPLES}
+          activeExampleId={activeExampleId}
+          onApply={applyExample}
+        />
         <div className="h-screen flex-1 overflow-hidden bg-[linear-gradient(180deg,#eef4fb_0%,#f8fafc_45%,#ffffff_100%)] text-slate-900">
           <section
             className={cn(
@@ -755,23 +1236,80 @@ export default function PorticoPlanoPage() {
 
                   {inputMode === 'supports' ? (
                     <div className="mt-6 grid gap-4 xl:grid-cols-2">
-                      {nodes.map((node, index) => (
-                        <div key={node.id} className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
-                          <StyledInlineSelect
-                            label={`No ${index + 1}`}
-                            tone="dark"
-                            value={supports[node.id] ?? ''}
-                            placeholder="Selecione"
-                            onValueChange={(value) => setSupports((current) => ({ ...current, [node.id]: value as FrameSupportPreset }))}
+                      {nodes.map((node, index) => {
+                        const nodeSupports =
+                          supports[node.id] ?? createFrameSupportRestrictions();
+
+                        return (
+                          <div
+                            key={node.id}
+                            className="rounded-2xl border border-white/10 bg-slate-950/20 p-4"
                           >
-                            {(['engaste', 'articulado', 'movel-vertical', 'livre'] as const).map((preset) => (
-                              <SelectItem key={preset} value={preset}>
-                                {supportLabel(preset)}
-                              </SelectItem>
-                            ))}
-                          </StyledInlineSelect>
-                        </div>
-                      ))}
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <h3 className="text-sm font-semibold text-white">
+                                  No {index + 1}
+                                </h3>
+                                <p className="mt-1 text-xs text-slate-400">
+                                  x = {node.x || '—'} m | y = {node.y || '—'} m
+                                </p>
+                              </div>
+                              <div className="rounded-full border border-sky-400/30 bg-sky-500/10 px-3 py-1 text-[11px] font-medium text-sky-100">
+                                {supportRestrictionSummary(nodeSupports)}
+                              </div>
+                            </div>
+                            <div className="mt-4 flex flex-col gap-2">
+                              {SUPPORT_RESTRICTION_OPTIONS.map((option) => {
+                                const checked = nodeSupports[option.key];
+
+                                return (
+                                  <label
+                                    key={`${node.id}-${option.key}`}
+                                    className={cn(
+                                      'flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 transition-colors',
+                                      checked
+                                        ? 'border-sky-400/50 bg-sky-500/10'
+                                        : 'border-white/10 bg-slate-900/35 hover:bg-slate-900/50',
+                                    )}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="sr-only"
+                                      checked={checked}
+                                      onChange={(event) =>
+                                        setSupports((current) => ({
+                                          ...current,
+                                          [node.id]: createFrameSupportRestrictions({
+                                            ...(current[node.id] ??
+                                              createFrameSupportRestrictions()),
+                                            [option.key]: event.target.checked,
+                                          }),
+                                        }))
+                                      }
+                                    />
+                                    <span
+                                      className={cn(
+                                        'flex h-5 w-5 items-center justify-center rounded-md border text-[11px] font-bold',
+                                        checked
+                                          ? 'border-sky-400 bg-sky-500 text-white'
+                                          : 'border-white/25 bg-slate-950/70 text-transparent',
+                                      )}
+                                    >
+                                      ✓
+                                    </span>
+                                    <span className="text-sm font-semibold text-white">
+                                      {option.label}
+                                    </span>
+                                    <span className="ml-auto text-[11px] text-slate-400">
+                                      {option.description}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : null}
 
@@ -796,9 +1334,9 @@ export default function PorticoPlanoPage() {
                             </div>
                             <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-4">
                               <StyledInlineInput label="Nome" tone="dark" value={material.name} onChange={(event) => updateMaterial(material.id, 'name', event.target.value)} />
-                              <StyledInlineInput label="E (kN/m²)" tone="dark" value={material.E} onChange={(event) => updateMaterial(material.id, 'E', event.target.value)} inputMode="decimal" />
-                              <StyledInlineInput label="A (m²)" tone="dark" value={material.A} onChange={(event) => updateMaterial(material.id, 'A', event.target.value)} inputMode="decimal" />
-                              <StyledInlineInput label="I (m⁴)" tone="dark" value={material.I} onChange={(event) => updateMaterial(material.id, 'I', event.target.value)} inputMode="decimal" />
+                              <StyledInlineInput label={`E (${FRAME2D_INPUT_UNITS.modulus})`} tone="dark" value={material.E} onChange={(event) => updateMaterial(material.id, 'E', event.target.value)} inputMode="decimal" />
+                              <StyledInlineInput label={`A (${FRAME2D_INPUT_UNITS.area})`} tone="dark" value={material.A} onChange={(event) => updateMaterial(material.id, 'A', event.target.value)} inputMode="decimal" />
+                              <StyledInlineInput label={`I (${FRAME2D_INPUT_UNITS.inertia})`} tone="dark" value={material.I} onChange={(event) => updateMaterial(material.id, 'I', event.target.value)} inputMode="decimal" />
                             </div>
                           </div>
                         ))}
@@ -851,6 +1389,9 @@ export default function PorticoPlanoPage() {
                             Adicionar carga distribuida
                           </Button>
                         </div>
+                        <div className="rounded-2xl border border-sky-400/25 bg-sky-500/10 px-4 py-3 text-xs text-sky-100">
+                          Cargas nodais `Fx`, `Fy` e `Mz` usam eixos globais. Agora cada carga distribuida pode ser informada em base global ou local. O solver converte a carga vetorial para a base local da barra e considera as componentes axial e transversal.
+                        </div>
                         <div className="grid gap-4">
                           {loads.filter((load) => load.type === 'distributed').map((load) => (
                             <div key={load.id} className="rounded-2xl border border-white/10 bg-slate-950/20 p-4">
@@ -861,7 +1402,7 @@ export default function PorticoPlanoPage() {
                                   Remover
                                 </Button>
                               </div>
-                              <div className="grid gap-3 xl:grid-cols-2">
+                              <div className="grid gap-3 xl:grid-cols-4">
                                 <StyledInlineSelect label="Barra" tone="dark" value={load.elementId} onValueChange={(value) => updateLoad(load.id, (current) => ({ ...(current as typeof load), elementId: value }))} placeholder="Selecione">
                                   {elementOptions.map((option) => (
                                     <SelectItem key={option.value} value={option.value}>
@@ -869,7 +1410,48 @@ export default function PorticoPlanoPage() {
                                     </SelectItem>
                                   ))}
                                 </StyledInlineSelect>
-                                <StyledInlineInput label="q (kN/m)" tone="dark" value={load.q} onChange={(event) => updateLoad(load.id, (current) => ({ ...(current as typeof load), q: event.target.value }))} inputMode="decimal" />
+                                <StyledInlineSelect
+                                  label="Base"
+                                  tone="dark"
+                                  value={load.coordinateSystem}
+                                  onValueChange={(value) =>
+                                    updateLoad(load.id, (current) => ({
+                                      ...(current as typeof load),
+                                      coordinateSystem: value as typeof load.coordinateSystem,
+                                    }))
+                                  }
+                                  placeholder="Selecione"
+                                >
+                                  {(['global', 'local'] as const).map((coordinateSystem) => (
+                                    <SelectItem key={coordinateSystem} value={coordinateSystem}>
+                                      {distributedLoadCoordinateSystemLabel(coordinateSystem)}
+                                    </SelectItem>
+                                  ))}
+                                </StyledInlineSelect>
+                                <StyledInlineInput
+                                  label={`qx ${load.coordinateSystem} (${FRAME2D_INPUT_UNITS.distributedLoad})`}
+                                  tone="dark"
+                                  value={load.qx}
+                                  onChange={(event) =>
+                                    updateLoad(load.id, (current) => ({
+                                      ...(current as typeof load),
+                                      qx: event.target.value,
+                                    }))
+                                  }
+                                  inputMode="decimal"
+                                />
+                                <StyledInlineInput
+                                  label={`qy ${load.coordinateSystem} (${FRAME2D_INPUT_UNITS.distributedLoad})`}
+                                  tone="dark"
+                                  value={load.qy}
+                                  onChange={(event) =>
+                                    updateLoad(load.id, (current) => ({
+                                      ...(current as typeof load),
+                                      qy: event.target.value,
+                                    }))
+                                  }
+                                  inputMode="decimal"
+                                />
                               </div>
                             </div>
                           ))}

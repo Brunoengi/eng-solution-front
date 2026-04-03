@@ -42,8 +42,8 @@ export function HomeApiStandards() {
             variant="outline"
             className="rounded-full border-white/18 bg-white/8 text-white hover:bg-white/12 hover:text-white"
           >
-            <Link href="/dashboard/portico-plano">
-              Ver módulo estrutural
+            <Link href="/dashboard/portico-espacial">
+              Ver modulo estrutural 3D
               <ArrowRight />
             </Link>
           </Button>

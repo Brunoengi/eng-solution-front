@@ -5,7 +5,7 @@ import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'r
 import type {
   Frame2DSystemResponse,
   FramePorticoViewerModel,
-  FrameSupportPreset,
+  FrameSupportRestrictions,
   FrameViewMode,
 } from '@/features/portico-plano/model';
 import { cn } from '@/lib/utils';
@@ -32,6 +32,17 @@ type FrameDiagramHoverCurve = {
 
 type FrameDiagramHover = {
   point: FrameDiagramHoverPoint;
+  tooltipX: number;
+  tooltipY: number;
+};
+
+type FrameNodeHover = {
+  nodeId: string;
+  label: string;
+  x: number;
+  y: number;
+  svgX: number;
+  svgY: number;
   tooltipX: number;
   tooltipY: number;
 };
@@ -86,51 +97,67 @@ function formatValue(value: number) {
   return value.toFixed(3);
 }
 
-function supportIcon(node: Point, preset: FrameSupportPreset, muted = false) {
+function supportIcon(
+  node: Point,
+  restrictions: FrameSupportRestrictions,
+  muted = false,
+) {
   const x = node.x;
   const y = node.y;
-  const supportStroke = muted ? '#94a3b8' : '#334155';
-  const supportFill = muted ? '#f8fafc' : '#f8fafc';
-  const supportBase = muted ? '#cbd5e1' : '#94a3b8';
-  const fixedStroke = muted ? '#94a3b8' : '#334155';
-  const fixedHatch = muted ? '#cbd5e1' : '#64748b';
+  const supportStroke = muted ? '#94a3b8' : '#475569';
+  const supportFill = muted ? '#e2e8f0' : '#a8a29e';
+  const supportInner = muted ? '#64748b' : '#334155';
+  const lateralTipOffset = restrictions.rz ? 19 : 5;
+  const bottomTipOffset = restrictions.rz ? 19 : 6;
 
-  if (preset === 'livre') return null;
-
-  if (preset === 'engaste') {
-    return (
-      <g>
-        <line x1={x - 11} y1={y + 5} x2={x + 11} y2={y + 5} stroke={fixedStroke} strokeWidth={1.8} />
-        {Array.from({ length: 5 }).map((_, index) => (
-          <line
-            key={index}
-            x1={x - 12 + index * 5}
-            y1={y + 5}
-            x2={x - 8 + index * 5}
-            y2={y + 15}
-            stroke={fixedHatch}
-            strokeWidth={1.1}
-          />
-        ))}
-      </g>
-    );
+  if (!restrictions.dx && !restrictions.dy && !restrictions.rz) {
+    return null;
   }
 
   return (
-      <g>
-      <polygon
-        points={`${x},${y + 4} ${x - 12},${y + 20} ${x + 12},${y + 20}`}
-        fill={supportFill}
-        stroke={supportStroke}
-        strokeWidth={1.8}
-      />
-      {preset === 'movel-vertical' ? (
+    <g>
+      {restrictions.rz ? (
         <>
-          <circle cx={x - 6} cy={y + 26} r={3.5} fill={supportFill} stroke={supportStroke} strokeWidth={1.8} />
-          <circle cx={x + 6} cy={y + 26} r={3.5} fill={supportFill} stroke={supportStroke} strokeWidth={1.8} />
+          <rect
+            x={x - 17}
+            y={y - 17}
+            width={34}
+            height={34}
+            fill={supportFill}
+            fillOpacity={0.92}
+            stroke={supportStroke}
+            strokeWidth={1.6}
+            rx={1.5}
+          />
+          <line
+            x1={x}
+            y1={y - 17}
+            x2={x}
+            y2={y - 31}
+            stroke={supportInner}
+            strokeWidth={1.8}
+            strokeLinecap="round"
+          />
         </>
       ) : null}
-      <line x1={x - 14} y1={y + 32} x2={x + 14} y2={y + 32} stroke={supportBase} strokeWidth={1.8} />
+      {restrictions.dx ? (
+        <polygon
+          points={`${x - lateralTipOffset},${y} ${x - (lateralTipOffset + 28)},${y - 14} ${x - (lateralTipOffset + 28)},${y + 14}`}
+          fill={supportFill}
+          stroke={supportStroke}
+          strokeWidth={1.6}
+          strokeLinejoin="round"
+        />
+      ) : null}
+      {restrictions.dy ? (
+        <polygon
+          points={`${x},${y + bottomTipOffset} ${x - 14},${y + (bottomTipOffset + 28)} ${x + 14},${y + (bottomTipOffset + 28)}`}
+          fill={supportFill}
+          stroke={supportStroke}
+          strokeWidth={1.6}
+          strokeLinejoin="round"
+        />
+      ) : null}
     </g>
   );
 }
@@ -147,6 +174,68 @@ function buildArrow(x1: number, y1: number, x2: number, y2: number, color: strin
     <g>
       <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={2.2} />
       <polygon points={`${x2},${y2} ${x3},${y3} ${x4},${y4}`} fill={color} />
+    </g>
+  );
+}
+
+function buildScreenLabelPoint(
+  midpoint: Point,
+  screenDirection: Point,
+  distance = 16,
+  normalDistance?: number,
+) {
+  const perpendicularOffset =
+    normalDistance ?? (screenDirection.x < 0 ? 8 : -8);
+  const nx = -screenDirection.y;
+  const ny = screenDirection.x;
+
+  return {
+    x: midpoint.x - screenDirection.x * distance + nx * perpendicularOffset,
+    y: midpoint.y - screenDirection.y * distance + ny * perpendicularOffset,
+  };
+}
+
+function renderHighlightedLoadLabel(
+  text: string,
+  position: Point,
+  anchor: 'start' | 'middle' | 'end' = 'middle',
+) {
+  const fontSize = 15;
+  const paddingX = 10;
+  const paddingY = 6;
+  const estimatedWidth = text.length * 8.1 + paddingX * 2;
+  const estimatedHeight = fontSize + paddingY * 2;
+  const rectX =
+    anchor === 'middle'
+      ? position.x - estimatedWidth / 2
+      : anchor === 'end'
+        ? position.x - estimatedWidth
+        : position.x;
+
+  return (
+    <g>
+      <rect
+        x={rectX}
+        y={position.y - estimatedHeight + 4}
+        width={estimatedWidth}
+        height={estimatedHeight}
+        rx={8}
+        fill="rgba(255,255,255,0.96)"
+        stroke="#bfdbfe"
+        strokeWidth={1.8}
+      />
+      <text
+        x={position.x}
+        y={position.y - 6}
+        textAnchor={anchor}
+        dominantBaseline="alphabetic"
+        className="fill-blue-800 text-[15px] font-extrabold tracking-[0.01em]"
+        stroke="rgba(255,255,255,0.98)"
+        strokeWidth={4}
+        paintOrder="stroke"
+      >
+        {text}
+      </text>
     </g>
   );
 }
@@ -188,6 +277,11 @@ function formatAxisValue(value: number) {
   return normalized.toFixed(3);
 }
 
+function formatNodeCoordinate(value: number) {
+  const normalized = Math.abs(value) < 1e-9 ? 0 : value;
+  return normalized.toFixed(2);
+}
+
 function shouldKeepAnnotation(
   annotation: { x: number; y: number; text: string },
   accepted: Array<{ x: number; y: number; text: string }>,
@@ -197,6 +291,10 @@ function shouldKeepAnnotation(
     const samePosition = Math.hypot(item.x - annotation.x, item.y - annotation.y) < 18;
     return sameValue && samePosition;
   });
+}
+
+function getDiagramDisplayValue(viewMode: FrameViewMode, value: number) {
+  return viewMode === 'momento' ? -value : value;
 }
 
 export function Frame2DViewer({
@@ -214,6 +312,7 @@ export function Frame2DViewer({
   const structureOpacity = useMutedStructure ? 0.72 : 1;
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [diagramHover, setDiagramHover] = useState<FrameDiagramHover | null>(null);
+  const [nodeHover, setNodeHover] = useState<FrameNodeHover | null>(null);
 
   const scene = useMemo(() => {
     const diagramUnit = getModeConfig(viewMode).unit;
@@ -277,7 +376,7 @@ export function Frame2DViewer({
         diagram.stations.forEach((station) => {
           const value =
             viewMode === 'normal' ? station.normal : viewMode === 'cortante' ? station.shear : station.moment;
-          const offset = value * diagramScale;
+          const offset = getDiagramDisplayValue(viewMode, value) * diagramScale;
           const nx = -Math.sin(diagram.angle);
           const ny = Math.cos(diagram.angle);
           overlayPoints.push({
@@ -372,39 +471,117 @@ export function Frame2DViewer({
     const distributedLoads = model.distributedLoads.map((load) => {
       const dx = load.endX - load.startX;
       const dy = load.endY - load.startY;
-      const length = Math.max(Math.hypot(dx, dy), 1e-9);
-      const tx = dx / length;
-      const ty = dy / length;
-      const nx = -ty;
-      const ny = tx;
-      const arrowDirection = load.q < 0 ? -1 : 1;
+      const vectorMagnitude = Math.max(
+        Math.hypot(load.globalQx, load.globalQy),
+        1e-9,
+      );
+      const dirX = load.globalQx / vectorMagnitude;
+      const dirY = load.globalQy / vectorMagnitude;
+      const loadOffset = Math.max(referenceLength * 0.06, 0.8);
+      const guideStartModel = {
+        x: load.startX - dirX * loadOffset,
+        y: load.startY - dirY * loadOffset,
+      };
+      const guideEndModel = {
+        x: load.endX - dirX * loadOffset,
+        y: load.endY - dirY * loadOffset,
+      };
 
       const arrows = Array.from({ length: 5 }).map((_, index) => {
         const ratio = (index + 0.5) / 5;
-        const base = { x: load.startX + dx * ratio, y: load.startY + dy * ratio };
-        const head = {
-          x: base.x + nx * arrowDirection * 0.35,
-          y: base.y + ny * arrowDirection * 0.35,
+        const beamPoint = {
+          x: load.startX + dx * ratio,
+          y: load.startY + dy * ratio,
+        };
+        const tailPoint = {
+          x: beamPoint.x - dirX * loadOffset,
+          y: beamPoint.y - dirY * loadOffset,
         };
 
         return {
-          base: project(base),
-          head: project(head),
+          tail: project(tailPoint),
+          head: project(beamPoint),
         };
       });
+
+      const guideStart = project(guideStartModel);
+      const guideEnd = project(guideEndModel);
+      const guideMidpoint = {
+        x: (guideStart.x + guideEnd.x) / 2,
+        y: (guideStart.y + guideEnd.y) / 2,
+      };
+      const labelPoint = buildScreenLabelPoint(
+        guideMidpoint,
+        { x: dirX, y: -dirY },
+        12,
+        dirX < 0 ? 10 : -10,
+      );
 
       return {
         ...load,
         start: project({ x: load.startX, y: load.startY }),
         end: project({ x: load.endX, y: load.endY }),
+        guideStart,
+        guideEnd,
+        startConnector: {
+          start: project({ x: load.startX, y: load.startY }),
+          end: guideStart,
+        },
+        endConnector: {
+          start: project({ x: load.endX, y: load.endY }),
+          end: guideEnd,
+        },
+        labelPoint,
         arrows,
       };
     });
 
-    const nodalLoads = model.nodalLoads.map((load) => ({
-      ...load,
-      point: project({ x: load.x, y: load.y }),
-    }));
+    const nodalLoads = model.nodalLoads.map((load) => {
+      const point = project({ x: load.x, y: load.y });
+      const fxSign = Math.abs(load.fx) > 1e-9 ? Math.sign(load.fx || 1) : 0;
+      const fySign = Math.abs(load.fy) > 1e-9 ? Math.sign(-load.fy || 1) : 0;
+
+      const fxArrow =
+        fxSign !== 0
+          ? {
+              start: {
+                x: point.x - fxSign * 50,
+                y: point.y,
+              },
+              end: point,
+              labelPoint: {
+                x: point.x - fxSign * 25,
+                y: point.y - 12,
+              },
+            }
+          : null;
+
+      const fyArrow =
+        fySign !== 0
+          ? {
+              start: {
+                x: point.x,
+                y: point.y - fySign * 56,
+              },
+              end: point,
+              labelPoint: {
+                x: point.x + 14,
+                y: point.y - fySign * 28 - 4,
+              },
+            }
+          : null;
+
+      return {
+        ...load,
+        point,
+        fxArrow,
+        fyArrow,
+        momentLabelPoint: {
+          x: point.x + 18,
+          y: point.y - 26,
+        },
+      };
+    });
 
     const acceptedAnnotations: Array<{ x: number; y: number; text: string }> = [];
 
@@ -414,7 +591,7 @@ export function Frame2DViewer({
             const polygonPoints = diagram.stations.map((station) => {
               const value =
                 viewMode === 'normal' ? station.normal : viewMode === 'cortante' ? station.shear : station.moment;
-              const offset = value * diagramScale;
+              const offset = getDiagramDisplayValue(viewMode, value) * diagramScale;
               const nx = -Math.sin(diagram.angle);
               const ny = Math.cos(diagram.angle);
               return project({ x: station.x + nx * offset, y: station.y + ny * offset });
@@ -579,7 +756,7 @@ export function Frame2DViewer({
                   : viewMode === 'cortante'
                     ? station.shear
                     : station.moment;
-              const offset = value * diagramScale;
+              const offset = getDiagramDisplayValue(viewMode, value) * diagramScale;
               const nx = -Math.sin(diagram.angle);
               const ny = Math.cos(diagram.angle);
               const projectedPoint = project({
@@ -627,7 +804,7 @@ export function Frame2DViewer({
                   : viewMode === 'cortante'
                     ? station.shear
                     : station.moment;
-              const offset = value * diagramScale;
+              const offset = getDiagramDisplayValue(viewMode, value) * diagramScale;
               const nx = -Math.sin(diagram.angle);
               const ny = Math.cos(diagram.angle);
               const projectedPoint = project({
@@ -769,6 +946,28 @@ export function Frame2DViewer({
     });
   };
 
+  const handleNodeHover = (
+    event: ReactMouseEvent<SVGGElement>,
+    node: (typeof scene.nodeProjection)[number],
+  ) => {
+    if (viewMode !== 'carregamentos' || !svgRef.current) {
+      setNodeHover(null);
+      return;
+    }
+
+    const rect = svgRef.current.getBoundingClientRect();
+    setNodeHover({
+      nodeId: node.id,
+      label: node.label,
+      x: node.x,
+      y: node.y,
+      svgX: node.point.x,
+      svgY: node.point.y,
+      tooltipX: event.clientX - rect.left,
+      tooltipY: event.clientY - rect.top,
+    });
+  };
+
   const clamp = (value: number, min: number, max: number) => {
     if (max < min) return min;
     return Math.min(max, Math.max(min, value));
@@ -782,7 +981,10 @@ export function Frame2DViewer({
         viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
         className="h-full w-full"
         onMouseMove={handleDiagramMouseMove}
-        onMouseLeave={() => setDiagramHover(null)}
+        onMouseLeave={() => {
+          setDiagramHover(null);
+          setNodeHover(null);
+        }}
       >
         <rect x={0} y={0} width={VIEWBOX_WIDTH} height={VIEWBOX_HEIGHT} fill="url(#frameBg)" />
         <defs>
@@ -925,13 +1127,45 @@ export function Frame2DViewer({
         {viewMode === 'carregamentos'
           ? scene.distributedLoads.map((load) => (
               <g key={load.id}>
-                <line x1={load.start.x} y1={load.start.y} x2={load.end.x} y2={load.end.y} stroke="#93c5fd" strokeWidth={2} />
+                <line
+                  x1={load.startConnector.start.x}
+                  y1={load.startConnector.start.y}
+                  x2={load.startConnector.end.x}
+                  y2={load.startConnector.end.y}
+                  stroke="#93c5fd"
+                  strokeWidth={2}
+                />
+                <line
+                  x1={load.endConnector.start.x}
+                  y1={load.endConnector.start.y}
+                  x2={load.endConnector.end.x}
+                  y2={load.endConnector.end.y}
+                  stroke="#93c5fd"
+                  strokeWidth={2}
+                />
+                <line
+                  x1={load.guideStart.x}
+                  y1={load.guideStart.y}
+                  x2={load.guideEnd.x}
+                  y2={load.guideEnd.y}
+                  stroke="#93c5fd"
+                  strokeWidth={2}
+                />
                 {load.arrows.map((arrow, index) => (
-                  <g key={`${load.id}-${index}`}>{buildArrow(arrow.base.x, arrow.base.y, arrow.head.x, arrow.head.y, '#1d4ed8')}</g>
+                  <g key={`${load.id}-${index}`}>
+                    {buildArrow(
+                      arrow.tail.x,
+                      arrow.tail.y,
+                      arrow.head.x,
+                      arrow.head.y,
+                      '#1d4ed8',
+                    )}
+                  </g>
                 ))}
-                <text x={(load.start.x + load.end.x) / 2} y={Math.min(load.start.y, load.end.y) - 18} textAnchor="middle" className="fill-blue-700 text-[12px] font-semibold">
-                  q = {formatValue(load.q)} kN/m
-                </text>
+                {renderHighlightedLoadLabel(
+                  `qg = (${formatValue(load.globalQx)}, ${formatValue(load.globalQy)}) kN/m`,
+                  load.labelPoint,
+                )}
               </g>
             ))
           : null}
@@ -939,21 +1173,21 @@ export function Frame2DViewer({
         {viewMode === 'carregamentos'
           ? scene.nodalLoads.map((load) => (
               <g key={load.id}>
-                {Math.abs(load.fx) > 1e-9
+                {load.fxArrow
                   ? buildArrow(
-                      load.point.x - Math.sign(load.fx || 1) * 50,
-                      load.point.y,
-                      load.point.x,
-                      load.point.y,
+                      load.fxArrow.start.x,
+                      load.fxArrow.start.y,
+                      load.fxArrow.end.x,
+                      load.fxArrow.end.y,
                       '#2563eb',
                     )
                   : null}
-                {Math.abs(load.fy) > 1e-9
+                {load.fyArrow
                   ? buildArrow(
-                      load.point.x,
-                      load.point.y - Math.sign(-load.fy || 1) * 56,
-                      load.point.x,
-                      load.point.y,
+                      load.fyArrow.start.x,
+                      load.fyArrow.start.y,
+                      load.fyArrow.end.x,
+                      load.fyArrow.end.y,
                       '#2563eb',
                     )
                   : null}
@@ -972,19 +1206,24 @@ export function Frame2DViewer({
                   </g>
                 ) : null}
                 {Math.abs(load.fx) > 1e-9 ? (
-                  <text x={load.point.x + 12} y={load.point.y - 34} className="fill-blue-700 text-[12px] font-semibold">
-                    Fx = {formatValue(load.fx)} kN
-                  </text>
+                  renderHighlightedLoadLabel(
+                    `Fx = ${formatValue(load.fx)} kN`,
+                    load.fxArrow!.labelPoint,
+                  )
                 ) : null}
                 {Math.abs(load.fy) > 1e-9 ? (
-                  <text x={load.point.x + 12} y={load.point.y - 18} className="fill-blue-700 text-[12px] font-semibold">
-                    Fy = {formatValue(load.fy)} kN
-                  </text>
+                  renderHighlightedLoadLabel(
+                    `Fy = ${formatValue(load.fy)} kN`,
+                    load.fyArrow!.labelPoint,
+                    'start',
+                  )
                 ) : null}
                 {Math.abs(load.mz) > 1e-9 ? (
-                  <text x={load.point.x + 12} y={load.point.y - 2} className="fill-blue-700 text-[12px] font-semibold">
-                    Mz = {formatValue(load.mz)} kN.m
-                  </text>
+                  renderHighlightedLoadLabel(
+                    `Mz = ${formatValue(load.mz)} kN.m`,
+                    load.momentLabelPoint,
+                    'start',
+                  )
                 ) : null}
               </g>
             ))
@@ -1023,8 +1262,23 @@ export function Frame2DViewer({
         ) : null}
 
         {scene.nodeProjection.map((node) => (
-          <g key={node.id}>
-            {supportIcon(node.point, node.supportPreset, useMutedStructure)}
+          <g
+            key={node.id}
+            onMouseEnter={(event) => handleNodeHover(event, node)}
+            onMouseMove={(event) => handleNodeHover(event, node)}
+            onMouseLeave={() => setNodeHover((current) => (current?.nodeId === node.id ? null : current))}
+          >
+            {supportIcon(node.point, node.supportRestrictions, useMutedStructure)}
+            {nodeHover?.nodeId === node.id && viewMode === 'carregamentos' ? (
+              <circle
+                cx={node.point.x}
+                cy={node.point.y}
+                r={11}
+                fill="rgba(37,99,235,0.12)"
+                stroke="#2563eb"
+                strokeWidth={1.8}
+              />
+            ) : null}
             <circle cx={node.point.x} cy={node.point.y} r={5.5} fill={nodeFill} fillOpacity={useMutedStructure ? 0.88 : 1} />
             <text x={node.point.x + 12} y={node.point.y + 28} textAnchor="start" fill={structureLabel} className="text-[12px] font-medium">
               {node.label}
@@ -1062,12 +1316,20 @@ export function Frame2DViewer({
           )}
         </div>
       ) : null}
+      {nodeHover && viewMode === 'carregamentos' ? (
+        <div
+          className="pointer-events-none absolute z-10 min-w-[170px] rounded-xl bg-slate-800/95 px-3 py-2 text-xs font-medium text-slate-50 shadow-xl"
+          style={{
+            left: clamp(nodeHover.tooltipX + 14, 8, 8 + VIEWBOX_WIDTH),
+            top: clamp(nodeHover.tooltipY - 54, 8, 8 + VIEWBOX_HEIGHT),
+            transform: 'translate(0, 0)',
+          }}
+        >
+          <div>{nodeHover.label}</div>
+          <div>x: {formatNodeCoordinate(nodeHover.x)} m</div>
+          <div>y: {formatNodeCoordinate(nodeHover.y)} m</div>
+        </div>
+      ) : null}
     </div>
   );
 }
-
-
-
-
-
-

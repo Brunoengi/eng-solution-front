@@ -23,6 +23,15 @@ const modules = [
     className: 'lg:col-span-3',
   },
   {
+    title: 'Pórtico espacial',
+    description: 'Análise 3D com entrada por GDL, visualização híbrida e diagramas por estação.',
+    href: '/dashboard/portico-espacial',
+    eyebrow: 'Análise estrutural 3D',
+    icon: Building2,
+    accent: 'from-[rgba(2,132,199,0.16)] via-[rgba(2,132,199,0.08)] to-transparent',
+    className: 'lg:col-span-3',
+  },
+  {
     title: 'Viga contínua',
     description: 'Fluxos para comportamento contínuo com base pronta para evoluções visuais e técnicas.',
     href: '/dashboard/viga-continua',

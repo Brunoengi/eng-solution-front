@@ -21,7 +21,7 @@ describe('buildFramePorticoSnapshot', () => {
     ];
 
     const materials: FrameMaterialInput[] = [
-      { id: 'm1', name: 'Concreto', E: '21000000', A: '0.18', I: '0.0054' },
+      { id: 'm1', name: 'Concreto', E: '21000', A: '1800', I: '540000' },
     ];
 
     const elements: FrameElementInput[] = [
@@ -40,8 +40,22 @@ describe('buildFramePorticoSnapshot', () => {
     const loads: FrameLoadInput[] = [
       { id: 'l1', type: 'nodal', nodeId: 'n2', fx: '30', fy: '0', mz: '0' },
       { id: 'l2', type: 'nodal', nodeId: 'n2', fx: '0', fy: '-10', mz: '3' },
-      { id: 'l3', type: 'distributed', elementId: 'b2', q: '-12' },
-      { id: 'l4', type: 'distributed', elementId: 'b2', q: '-3' },
+      {
+        id: 'l3',
+        type: 'distributed',
+        elementId: 'b2',
+        coordinateSystem: 'global',
+        qx: '0',
+        qy: '-12',
+      },
+      {
+        id: 'l4',
+        type: 'distributed',
+        elementId: 'b2',
+        coordinateSystem: 'global',
+        qx: '',
+        qy: '-3',
+      },
     ];
 
     const snapshot = buildFramePorticoSnapshot({
@@ -67,18 +81,76 @@ describe('buildFramePorticoSnapshot', () => {
     expect(node4?.prescribedDisplacements).toEqual({ ux: 0, uy: 0 });
 
     const bar2 = snapshot.requestBody.elements.find((element) => element.label === 'B2');
-    expect(bar2?.q).toBe(-15);
+    expect(bar2?.distributedLoad).toEqual({
+      coordinateSystem: 'global',
+      qy: -15,
+    });
     expect(bar2?.E).toBe(21000000);
-    expect(bar2?.A).toBe(0.18);
-    expect(bar2?.I).toBe(0.0054);
+    expect(bar2?.A).toBeCloseTo(0.18);
+    expect(bar2?.I).toBeCloseTo(0.0054);
 
     expect(snapshot.viewerModel.distributedLoads).toEqual([
       expect.objectContaining({
         elementId: 'b2',
-        q: -15,
+        globalQx: 0,
+        globalQy: -15,
+        localQx: 0,
+        localQy: -15,
       }),
     ]);
     expect(snapshot.materials).toEqual(materials);
+  });
+
+  it('converte carga distribuida local para global antes de montar o payload', () => {
+    const nodes: FrameNodeInput[] = [
+      { id: 'n1', x: '0', y: '0' },
+      { id: 'n2', x: '4', y: '3' },
+    ];
+
+    const materials: FrameMaterialInput[] = [
+      { id: 'm1', name: 'Aco', E: '21000', A: '1800', I: '540000' },
+    ];
+
+    const elements: FrameElementInput[] = [
+      { id: 'b1', nodeI: 'n1', nodeJ: 'n2', materialId: 'm1' },
+    ];
+
+    const supports: FrameSupportMap = {
+      n1: 'engaste',
+      n2: 'livre',
+    };
+
+    const loads: FrameLoadInput[] = [
+      {
+        id: 'l1',
+        type: 'distributed',
+        elementId: 'b1',
+        coordinateSystem: 'local',
+        qx: '-6',
+        qy: '-8',
+      },
+    ];
+
+    const snapshot = buildFramePorticoSnapshot({
+      caseName: 'Carga local',
+      analysisType: 'static-linear',
+      nodes,
+      materials,
+      elements,
+      supports,
+      loads,
+      nPointsPerElement: 24,
+    });
+
+    expect(snapshot.requestBody.elements[0]?.distributedLoad?.coordinateSystem).toBe('global');
+    expect(snapshot.requestBody.elements[0]?.distributedLoad?.qx ?? 0).toBeCloseTo(0, 10);
+    expect(snapshot.requestBody.elements[0]?.distributedLoad?.qy ?? 0).toBeCloseTo(-10, 10);
+
+    const viewerLoad = snapshot.viewerModel.distributedLoads[0];
+    expect(viewerLoad?.globalQx ?? 0).toBeCloseTo(0, 10);
+    expect(viewerLoad?.globalQy ?? 0).toBeCloseTo(-10, 10);
+    expect(viewerLoad?.localQx ?? 0).toBeCloseTo(-6, 10);
+    expect(viewerLoad?.localQy ?? 0).toBeCloseTo(-8, 10);
   });
 
   it('gera erro quando um valor numerico obrigatorio esta invalido', () => {
@@ -88,7 +160,7 @@ describe('buildFramePorticoSnapshot', () => {
     ];
 
     const materials: FrameMaterialInput[] = [
-      { id: 'm1', name: 'Concreto', E: '', A: '0.18', I: '0.0054' },
+      { id: 'm1', name: 'Concreto', E: '', A: '1800', I: '540000' },
     ];
 
     const elements: FrameElementInput[] = [{ id: 'b1', nodeI: 'n1', nodeJ: 'n2', materialId: 'm1' }];

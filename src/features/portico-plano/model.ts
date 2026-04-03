@@ -1,4 +1,10 @@
 export type FrameSupportPreset = 'engaste' | 'articulado' | 'movel-vertical' | 'livre';
+export type FrameSupportRestrictionKey = 'dx' | 'dy' | 'rz';
+export interface FrameSupportRestrictions {
+  dx: boolean;
+  dy: boolean;
+  rz: boolean;
+}
 export type FrameViewMode = 'carregamentos' | 'normal' | 'cortante' | 'momento' | 'deformada';
 
 export interface FrameNodeInput {
@@ -31,15 +37,19 @@ export type FrameNodalLoadInput = {
   mz: string;
 };
 
+export type FrameDistributedLoadCoordinateSystem = 'global' | 'local';
+
 export type FrameDistributedLoadInput = {
   id: string;
   type: 'distributed';
   elementId: string;
-  q: string;
+  coordinateSystem: FrameDistributedLoadCoordinateSystem;
+  qx: string;
+  qy: string;
 };
 
 export type FrameLoadInput = FrameNodalLoadInput | FrameDistributedLoadInput;
-export type FrameSupportMap = Record<string, FrameSupportPreset>;
+export type FrameSupportMap = Record<string, FrameSupportRestrictions>;
 
 export interface Frame2DSystemRequest {
   analysisType: 'static-linear';
@@ -65,7 +75,11 @@ export interface Frame2DSystemRequest {
     E: number;
     A: number;
     I: number;
-    q?: number;
+    distributedLoad?: {
+      coordinateSystem: FrameDistributedLoadCoordinateSystem;
+      qx?: number;
+      qy?: number;
+    };
   }>;
   postProcessing: {
     nPointsPerElement: number;
@@ -144,7 +158,7 @@ export interface FrameViewerNode {
   label: string;
   x: number;
   y: number;
-  supportPreset: FrameSupportPreset;
+  supportRestrictions: FrameSupportRestrictions;
 }
 
 export interface FrameViewerElement {
@@ -177,7 +191,10 @@ export interface FrameViewerDistributedLoad {
   startY: number;
   endX: number;
   endY: number;
-  q: number;
+  globalQx: number;
+  globalQy: number;
+  localQx: number;
+  localQy: number;
 }
 
 export interface FramePorticoViewerModel {
@@ -203,6 +220,16 @@ export interface FramePorticoSnapshot {
   processedAt: string | null;
 }
 
+export const FRAME2D_INPUT_UNITS = {
+  length: 'm',
+  force: 'kN',
+  moment: 'kN*m',
+  distributedLoad: 'kN/m',
+  modulus: 'MPa',
+  area: 'cm2',
+  inertia: 'cm4',
+} as const;
+
 export interface ReplicateFrameGeometryParams {
   nodes: FrameNodeInput[];
   elements: FrameElementInput[];
@@ -219,8 +246,11 @@ export interface ReplicateFrameGeometryResult {
   supports: FrameSupportMap;
 }
 
-const STORAGE_KEY = 'eng-solution:portico-plano:v1';
+const STORAGE_KEY = 'eng-solution:portico-plano:v5';
 const POSITION_TOLERANCE = 1e-9;
+const MPA_TO_KN_PER_M2 = 1000;
+const CM2_TO_M2 = 1e-4;
+const CM4_TO_M4 = 1e-8;
 
 type Point2D = {
   x: number;
@@ -231,6 +261,32 @@ type GeometrySegment = {
   label: string;
   start: Point2D;
   end: Point2D;
+};
+
+type FrameElementGeometry = {
+  dx: number;
+  dy: number;
+  length: number;
+  c: number;
+  s: number;
+};
+
+type ResolvedDistributedLoadVector = {
+  global: {
+    qx: number;
+    qy: number;
+  };
+  local: {
+    qx: number;
+    qy: number;
+  };
+};
+
+type AggregatedDistributedLoad = {
+  globalQx: number;
+  globalQy: number;
+  localQx: number;
+  localQy: number;
 };
 
 function parseFiniteNumber(fieldLabel: string, value: string): number {
@@ -247,6 +303,52 @@ function parseFiniteNumber(fieldLabel: string, value: string): number {
   return parsed;
 }
 
+function parseOptionalLoadComponent(fieldLabel: string, value: string): number {
+  const normalized = value.trim();
+  if (!normalized) {
+    return 0;
+  }
+
+  return parseFiniteNumber(fieldLabel, value);
+}
+
+function convertModulusToFrame2DUnits(valueInMpa: number): number {
+  return valueInMpa * MPA_TO_KN_PER_M2;
+}
+
+function convertAreaToFrame2DUnits(valueInCm2: number): number {
+  return valueInCm2 * CM2_TO_M2;
+}
+
+function convertInertiaToFrame2DUnits(valueInCm4: number): number {
+  return valueInCm4 * CM4_TO_M4;
+}
+
+function resolveDistributedLoadVector(
+  coordinateSystem: FrameDistributedLoadCoordinateSystem,
+  qx: number,
+  qy: number,
+  geometry: FrameElementGeometry,
+): ResolvedDistributedLoadVector {
+  if (coordinateSystem === 'global') {
+    return {
+      global: { qx, qy },
+      local: {
+        qx: geometry.c * qx + geometry.s * qy,
+        qy: -geometry.s * qx + geometry.c * qy,
+      },
+    };
+  }
+
+  return {
+    local: { qx, qy },
+    global: {
+      qx: geometry.c * qx - geometry.s * qy,
+      qy: geometry.s * qx + geometry.c * qy,
+    },
+  };
+}
+
 function hasSignificantValue(value: number) {
   return Math.abs(value) > POSITION_TOLERANCE;
 }
@@ -255,18 +357,50 @@ function buildNodeLabel(index: number) {
   return `N${index + 1}`;
 }
 
-function supportPresetToPrescribedDisplacements(preset: FrameSupportPreset) {
+export function createFrameSupportRestrictions(
+  overrides: Partial<FrameSupportRestrictions> = {},
+): FrameSupportRestrictions {
+  return {
+    dx: false,
+    dy: false,
+    rz: false,
+    ...overrides,
+  };
+}
+
+function isFrameSupportPreset(value: unknown): value is FrameSupportPreset {
+  return (
+    value === 'engaste' ||
+    value === 'articulado' ||
+    value === 'movel-vertical' ||
+    value === 'livre'
+  );
+}
+
+export function supportPresetToRestrictions(
+  preset: FrameSupportPreset,
+): FrameSupportRestrictions {
   switch (preset) {
     case 'engaste':
-      return { ux: 0, uy: 0, rz: 0 };
+      return createFrameSupportRestrictions({ dx: true, dy: true, rz: true });
     case 'articulado':
-      return { ux: 0, uy: 0 };
+      return createFrameSupportRestrictions({ dx: true, dy: true });
     case 'movel-vertical':
-      return { uy: 0 };
+      return createFrameSupportRestrictions({ dy: true });
     case 'livre':
     default:
-      return {};
+      return createFrameSupportRestrictions();
   }
+}
+
+export function supportRestrictionsToPrescribedDisplacements(
+  restrictions: FrameSupportRestrictions,
+) {
+  return {
+    ...(restrictions.dx ? { ux: 0 } : {}),
+    ...(restrictions.dy ? { uy: 0 } : {}),
+    ...(restrictions.rz ? { rz: 0 } : {}),
+  };
 }
 
 function sortObjectEntries<T>(input: Record<string, T>) {
@@ -337,11 +471,26 @@ function hasOverlappingInterior(first: GeometrySegment, second: GeometrySegment)
   return intervalEnd - intervalStart > normalizedTolerance;
 }
 
-function normalizeSupportMap(nodes: FrameNodeInput[], supports: FrameSupportMap): FrameSupportMap {
+function normalizeSupportEntry(
+  entry: FrameSupportRestrictions | FrameSupportPreset | undefined,
+): FrameSupportRestrictions {
+  if (!entry) {
+    return createFrameSupportRestrictions();
+  }
+
+  if (isFrameSupportPreset(entry)) {
+    return supportPresetToRestrictions(entry);
+  }
+
+  return createFrameSupportRestrictions(entry);
+}
+
+function normalizeSupportMap(
+  nodes: FrameNodeInput[],
+  supports: Record<string, FrameSupportRestrictions | FrameSupportPreset | undefined>,
+): FrameSupportMap {
   return Object.fromEntries(
-    nodes
-      .map((node) => [node.id, supports[node.id]] as const)
-      .filter((entry): entry is [string, FrameSupportPreset] => Boolean(entry[1])),
+    nodes.map((node) => [node.id, normalizeSupportEntry(supports[node.id])]),
   );
 }
 
@@ -448,7 +597,12 @@ export function replicateFrameGeometry(
   const dy = destinationReference.y - sourceReference.y;
   const nextNodes = [...nodes];
   const nextElements = [...elements];
-  const nextSupports: FrameSupportMap = { ...supports };
+  const nextSupports: FrameSupportMap = Object.fromEntries(
+    Object.entries(supports).map(([nodeId, restrictions]) => [
+      nodeId,
+      createFrameSupportRestrictions(restrictions),
+    ]),
+  );
   const translatedNodeIdMap = new Map<string, string>();
 
   selectedNodeIds.forEach((nodeId) => {
@@ -483,7 +637,7 @@ export function replicateFrameGeometry(
       x: String(translatedPoint.x),
       y: String(translatedPoint.y),
     });
-    nextSupports[newNodeId] = 'livre';
+    nextSupports[newNodeId] = createFrameSupportRestrictions();
   });
 
   const existingSegments: GeometrySegment[] = elements.map((element, index) => {
@@ -604,34 +758,7 @@ export function buildFramePorticoSnapshot(params: {
     materialIndex.set(material.id, material);
   });
 
-  const aggregatedNodalLoads = new Map<string, { fx: number; fy: number; mz: number }>();
-  const aggregatedDistributedLoads = new Map<string, number>();
-
-  loads.forEach((load) => {
-    if (load.type === 'nodal') {
-      if (!nodeIndex.has(load.nodeId)) {
-        throw new Error('Existe carga nodal associada a um no inexistente.');
-      }
-
-      const current = aggregatedNodalLoads.get(load.nodeId) ?? { fx: 0, fy: 0, mz: 0 };
-      current.fx += parseFiniteNumber(`Fx da carga nodal ${load.id}`, load.fx);
-      current.fy += parseFiniteNumber(`Fy da carga nodal ${load.id}`, load.fy);
-      current.mz += parseFiniteNumber(`Mz da carga nodal ${load.id}`, load.mz);
-      aggregatedNodalLoads.set(load.nodeId, current);
-      return;
-    }
-
-    const current = aggregatedDistributedLoads.get(load.elementId) ?? 0;
-    aggregatedDistributedLoads.set(
-      load.elementId,
-      current + parseFiniteNumber(`q da carga distribuida ${load.id}`, load.q),
-    );
-  });
-
-  const viewerElements: FrameViewerElement[] = [];
-  const requestElements: Frame2DSystemRequest['elements'] = [];
-
-  elements.forEach((element, index) => {
+  const preparedElements = elements.map((element, index) => {
     const nodeI = nodeIndex.get(element.nodeI);
     const nodeJ = nodeIndex.get(element.nodeJ);
     const material = materialIndex.get(element.materialId);
@@ -656,40 +783,110 @@ export function buildFramePorticoSnapshot(params: {
       throw new Error(`A barra ${index + 1} possui comprimento nulo.`);
     }
 
-    const label = `B${index + 1}`;
+    return {
+      input: element,
+      index,
+      label: `B${index + 1}`,
+      nodeI,
+      nodeJ,
+      material,
+      geometry: {
+        dx,
+        dy,
+        length,
+        c: dx / length,
+        s: dy / length,
+      },
+    };
+  });
 
-    viewerElements.push({
-      id: element.id,
-      label,
-      nodeI: nodeI.input.id,
-      nodeJ: nodeJ.input.id,
-      startX: nodeI.x,
-      startY: nodeI.y,
-      endX: nodeJ.x,
-      endY: nodeJ.y,
-    });
+  const preparedElementIndex = new Map(
+    preparedElements.map((element) => [element.input.id, element] as const),
+  );
 
-    requestElements.push({
-      label,
-      node_i: nodeI.label,
-      node_j: nodeJ.label,
-      E: parseFiniteNumber(`E do material ${material.name || index + 1}`, material.E),
-      A: parseFiniteNumber(`A do material ${material.name || index + 1}`, material.A),
-      I: parseFiniteNumber(`I do material ${material.name || index + 1}`, material.I),
-      q: aggregatedDistributedLoads.get(element.id) ?? 0,
-    });
+  const aggregatedNodalLoads = new Map<string, { fx: number; fy: number; mz: number }>();
+  const aggregatedDistributedLoads = new Map<string, AggregatedDistributedLoad>();
+
+  loads.forEach((load) => {
+    if (load.type === 'nodal') {
+      if (!nodeIndex.has(load.nodeId)) {
+        throw new Error('Existe carga nodal associada a um no inexistente.');
+      }
+
+      const current = aggregatedNodalLoads.get(load.nodeId) ?? { fx: 0, fy: 0, mz: 0 };
+      current.fx += parseFiniteNumber(`Fx da carga nodal ${load.id}`, load.fx);
+      current.fy += parseFiniteNumber(`Fy da carga nodal ${load.id}`, load.fy);
+      current.mz += parseFiniteNumber(`Mz da carga nodal ${load.id}`, load.mz);
+      aggregatedNodalLoads.set(load.nodeId, current);
+      return;
+    }
+
+    const preparedElement = preparedElementIndex.get(load.elementId);
+    if (!preparedElement) {
+      throw new Error('Existe carga distribuida associada a uma barra inexistente.');
+    }
+
+    const resolved = resolveDistributedLoadVector(
+      load.coordinateSystem,
+      parseOptionalLoadComponent(`qx da carga distribuida ${load.id}`, load.qx),
+      parseOptionalLoadComponent(`qy da carga distribuida ${load.id}`, load.qy),
+      preparedElement.geometry,
+    );
+    const current = aggregatedDistributedLoads.get(load.elementId) ?? {
+      globalQx: 0,
+      globalQy: 0,
+      localQx: 0,
+      localQy: 0,
+    };
+
+    current.globalQx += resolved.global.qx;
+    current.globalQy += resolved.global.qy;
+    current.localQx += resolved.local.qx;
+    current.localQy += resolved.local.qy;
+    aggregatedDistributedLoads.set(load.elementId, current);
+  });
+
+  const viewerElements: FrameViewerElement[] = preparedElements.map((element) => ({
+    id: element.input.id,
+    label: element.label,
+    nodeI: element.nodeI.input.id,
+    nodeJ: element.nodeJ.input.id,
+    startX: element.nodeI.x,
+    startY: element.nodeI.y,
+    endX: element.nodeJ.x,
+    endY: element.nodeJ.y,
+  }));
+
+  const requestElements: Frame2DSystemRequest['elements'] = preparedElements.map((element) => {
+    const distributedLoad = aggregatedDistributedLoads.get(element.input.id);
+
+    return {
+      label: element.label,
+      node_i: element.nodeI.label,
+      node_j: element.nodeJ.label,
+      E: convertModulusToFrame2DUnits(parseFiniteNumber(`E do material ${element.material.name || element.index + 1}`, element.material.E)),
+      A: convertAreaToFrame2DUnits(parseFiniteNumber(`A do material ${element.material.name || element.index + 1}`, element.material.A)),
+      I: convertInertiaToFrame2DUnits(parseFiniteNumber(`I do material ${element.material.name || element.index + 1}`, element.material.I)),
+      ...(distributedLoad &&
+      (hasSignificantValue(distributedLoad.globalQx) || hasSignificantValue(distributedLoad.globalQy))
+        ? {
+            distributedLoad: {
+              coordinateSystem: 'global' as const,
+              ...(hasSignificantValue(distributedLoad.globalQx) ? { qx: distributedLoad.globalQx } : {}),
+              ...(hasSignificantValue(distributedLoad.globalQy) ? { qy: distributedLoad.globalQy } : {}),
+            },
+          }
+        : {}),
+    };
   });
 
   const requestNodes: Frame2DSystemRequest['nodes'] = nodes.map((node) => {
     const normalized = nodeIndex.get(node.id)!;
     const actions = aggregatedNodalLoads.get(node.id);
-    const supportPreset = normalizedSupports[node.id];
-
-    if (!supportPreset) {
-      throw new Error(`Selecione o apoio do no ${normalized.label}.`);
-    }
-
-    const prescribed = supportPresetToPrescribedDisplacements(supportPreset);
+    const supportRestrictions =
+      normalizedSupports[node.id] ?? createFrameSupportRestrictions();
+    const prescribed =
+      supportRestrictionsToPrescribedDisplacements(supportRestrictions);
 
     return {
       label: normalized.label,
@@ -726,7 +923,8 @@ export function buildFramePorticoSnapshot(params: {
         label: normalized.label,
         x: normalized.x,
         y: normalized.y,
-        supportPreset: normalizedSupports[node.id] ?? 'livre',
+        supportRestrictions:
+          normalizedSupports[node.id] ?? createFrameSupportRestrictions(),
       };
     }),
     elements: viewerElements,
@@ -756,9 +954,18 @@ export function buildFramePorticoSnapshot(params: {
         startY: element.startY,
         endX: element.endX,
         endY: element.endY,
-        q: aggregatedDistributedLoads.get(element.id) ?? 0,
+        globalQx: aggregatedDistributedLoads.get(element.id)?.globalQx ?? 0,
+        globalQy: aggregatedDistributedLoads.get(element.id)?.globalQy ?? 0,
+        localQx: aggregatedDistributedLoads.get(element.id)?.localQx ?? 0,
+        localQy: aggregatedDistributedLoads.get(element.id)?.localQy ?? 0,
       }))
-      .filter((load) => hasSignificantValue(load.q)),
+      .filter(
+        (load) =>
+          hasSignificantValue(load.globalQx) ||
+          hasSignificantValue(load.globalQy) ||
+          hasSignificantValue(load.localQx) ||
+          hasSignificantValue(load.localQy),
+      ),
   };
 
   return {
@@ -898,4 +1105,3 @@ export function loadFramePorticoSnapshot(): FramePorticoSnapshot | null {
     return null;
   }
 }
-
