@@ -111,7 +111,7 @@ export function Header() {
               <DraftingCompass className="size-5" />
             </div>
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[rgb(14,116,144)]">Structural workspace</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[rgb(14,116,144)]">Structural Workspace</p>
               <h1 className="text-lg font-semibold tracking-[-0.02em] text-[rgb(15,23,42)]">Eng Solution</h1>
             </div>
           </Link>
