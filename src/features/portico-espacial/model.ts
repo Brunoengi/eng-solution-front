@@ -9,6 +9,17 @@ export type Frame3DViewMode =
   | 'Mz';
 
 export type Frame3DProjectionView = '3d' | 'xy' | 'xz' | 'yz';
+export type Frame3DCameraProjection = 'perspective' | 'orthographic';
+export type Frame3DVisualizationSize = 'small' | 'medium' | 'large';
+export type Frame3DLoadColorMode = 'uniform' | 'by-value';
+
+export interface Frame3DVisualizationSettings {
+  camera3dProjection: Frame3DCameraProjection;
+  planarProjection: Frame3DCameraProjection;
+  loadSymbolSize: Frame3DVisualizationSize;
+  loadLabelSize: Frame3DVisualizationSize;
+  loadColorMode: Frame3DLoadColorMode;
+}
 
 export interface Frame3DNodeInput {
   id: string;
@@ -273,15 +284,18 @@ export interface Frame3DPorticoViewerModel {
   distributedLoads: Frame3DViewerDistributedLoad[];
 }
 
-export interface Frame3DPorticoSnapshot {
-  signature: string;
-  caseName: string;
-  analysisType: 'static-linear';
+export interface Frame3DEditorState {
   nodes: Frame3DNodeInput[];
   materials: Frame3DMaterialInput[];
   elements: Frame3DElementInput[];
   supports: Frame3DSupportMap;
   loads: Frame3DLoadInput[];
+}
+
+export interface Frame3DPorticoSnapshot extends Frame3DEditorState {
+  signature: string;
+  caseName: string;
+  analysisType: 'static-linear';
   nStations: number;
   viewerModel: Frame3DPorticoViewerModel;
   requestBody: Frame3DSystemRequest;
@@ -300,6 +314,8 @@ export const FRAME3D_INPUT_UNITS = {
 } as const;
 
 const STORAGE_KEY = 'eng-solution:portico-espacial:v1';
+const EDITOR_STATE_STORAGE_KEY = 'eng-solution:portico-espacial:editor:v1';
+const VISUALIZATION_SETTINGS_STORAGE_KEY = 'eng-solution:portico-espacial:visualizacao:v1';
 const ZERO_TOL = 1e-9;
 const KN_TO_N = 1000;
 const KNM_TO_NM = 1000;
@@ -307,6 +323,14 @@ const KN_PER_M_TO_N_PER_M = 1000;
 const MPA_TO_PA = 1e6;
 const CM2_TO_M2 = 1e-4;
 const CM4_TO_M4 = 1e-8;
+
+export const DEFAULT_FRAME3D_VISUALIZATION_SETTINGS: Frame3DVisualizationSettings = {
+  camera3dProjection: 'perspective',
+  planarProjection: 'orthographic',
+  loadSymbolSize: 'medium',
+  loadLabelSize: 'small',
+  loadColorMode: 'by-value',
+};
 
 function parseFiniteNumber(fieldLabel: string, value: string): number {
   const normalized = value.trim();
@@ -330,12 +354,24 @@ function convertForceToSi(valueInKn: number): number {
   return valueInKn * KN_TO_N;
 }
 
+function convertForceFromSi(valueInN: number): number {
+  return valueInN / KN_TO_N;
+}
+
 function convertMomentToSi(valueInKnm: number): number {
   return valueInKnm * KNM_TO_NM;
 }
 
+function convertMomentFromSi(valueInNm: number): number {
+  return valueInNm / KNM_TO_NM;
+}
+
 function convertDistributedLoadToSi(valueInKnPerM: number): number {
   return valueInKnPerM * KN_PER_M_TO_N_PER_M;
+}
+
+function convertDistributedLoadFromSi(valueInNPerM: number): number {
+  return valueInNPerM / KN_PER_M_TO_N_PER_M;
 }
 
 function convertModulusToSi(valueInMpa: number): number {
@@ -392,14 +428,29 @@ export function createUnlockedSupport(): Frame3DSupportInput {
   };
 }
 
+function normalizeRotationalRestrictions(
+  support: Partial<Frame3DSupportInput> | Frame3DSupportInput,
+): Frame3DSupportInput {
+  const rotationRestricted = Boolean(support.rx || support.ry || support.rz);
+
+  return {
+    ux: Boolean(support.ux),
+    uy: Boolean(support.uy),
+    uz: Boolean(support.uz),
+    rx: rotationRestricted,
+    ry: rotationRestricted,
+    rz: rotationRestricted,
+  };
+}
+
 function normalizeSupports(nodes: Frame3DNodeInput[], supports: Frame3DSupportMap): Frame3DSupportMap {
   const normalized: Frame3DSupportMap = {};
 
   nodes.forEach((node) => {
-    normalized[node.id] = {
+    normalized[node.id] = normalizeRotationalRestrictions({
       ...createUnlockedSupport(),
       ...(supports[node.id] ?? {}),
-    };
+    });
   });
 
   return normalized;
@@ -438,6 +489,13 @@ export function buildFrame3DPorticoSnapshot(params: {
   }
 
   const normalizedSupports = normalizeSupports(nodes, supports);
+  const hasAnySupport = Object.values(normalizedSupports).some((support) =>
+    support.ux || support.uy || support.uz || support.rx || support.ry || support.rz,
+  );
+
+  if (!hasAnySupport) {
+    throw new Error('Informe ao menos um apoio antes de processar o portico espacial.');
+  }
 
   const nodeIndex = new Map<string, { input: Frame3DNodeInput; x: number; y: number; z: number; label: string }>();
   nodes.forEach((node, index) => {
@@ -639,12 +697,12 @@ export function buildFrame3DPorticoSnapshot(params: {
           x: normalized.x,
           y: normalized.y,
           z: normalized.z,
-          fx: load.fx,
-          fy: load.fy,
-          fz: load.fz,
-          mx: load.mx,
-          my: load.my,
-          mz: load.mz,
+          fx: convertForceFromSi(load.fx),
+          fy: convertForceFromSi(load.fy),
+          fz: convertForceFromSi(load.fz),
+          mx: convertMomentFromSi(load.mx),
+          my: convertMomentFromSi(load.my),
+          mz: convertMomentFromSi(load.mz),
         };
       })
       .filter(
@@ -669,8 +727,8 @@ export function buildFrame3DPorticoSnapshot(params: {
           endX: element.endX,
           endY: element.endY,
           endZ: element.endZ,
-          qy: load.qy,
-          qz: load.qz,
+          qy: convertDistributedLoadFromSi(load.qy),
+          qz: convertDistributedLoadFromSi(load.qz),
         };
       })
       .filter((load) => hasSignificantValue(load.qy) || hasSignificantValue(load.qz)),
@@ -707,6 +765,31 @@ export function saveFrame3DPorticoSnapshot(snapshot: Frame3DPorticoSnapshot) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
 }
 
+export function clearFrame3DPorticoSnapshotStorage() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(STORAGE_KEY);
+}
+
+export function saveFrame3DEditorState(state: Frame3DEditorState) {
+  if (typeof window === 'undefined') return;
+
+  const serializedState = JSON.stringify({
+    ...state,
+    supports: normalizeSupports(state.nodes, state.supports),
+  });
+
+  try {
+    window.localStorage.setItem(EDITOR_STATE_STORAGE_KEY, serializedState);
+  } catch {
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.setItem(EDITOR_STATE_STORAGE_KEY, serializedState);
+    } catch {
+      // Ignore persistence failures and keep the editor usable.
+    }
+  }
+}
+
 export function loadFrame3DPorticoSnapshot(): Frame3DPorticoSnapshot | null {
   if (typeof window === 'undefined') return null;
 
@@ -732,5 +815,96 @@ export function loadFrame3DPorticoSnapshot(): Frame3DPorticoSnapshot | null {
     };
   } catch {
     return null;
+  }
+}
+
+export function loadFrame3DEditorState(): Frame3DEditorState | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(EDITOR_STATE_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Frame3DEditorState;
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        Array.isArray(parsed.nodes) &&
+        Array.isArray(parsed.materials) &&
+        Array.isArray(parsed.elements) &&
+        Array.isArray(parsed.loads)
+      ) {
+        return {
+          ...parsed,
+          supports: normalizeSupports(parsed.nodes, parsed.supports ?? {}),
+        };
+      }
+    }
+  } catch {
+    // Fall back to the last valid snapshot below.
+  }
+
+  const snapshot = loadFrame3DPorticoSnapshot();
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    nodes: snapshot.nodes,
+    materials: snapshot.materials,
+    elements: snapshot.elements,
+    supports: normalizeSupports(snapshot.nodes, snapshot.supports),
+    loads: snapshot.loads,
+  };
+}
+
+function normalizeFrame3DVisualizationSettings(
+  value: unknown,
+): Frame3DVisualizationSettings {
+  if (!value || typeof value !== 'object') {
+    return DEFAULT_FRAME3D_VISUALIZATION_SETTINGS;
+  }
+
+  const candidate = value as Partial<Frame3DVisualizationSettings>;
+
+  return {
+    camera3dProjection:
+      candidate.camera3dProjection === 'orthographic' ? 'orthographic' : 'perspective',
+    planarProjection:
+      candidate.planarProjection === 'perspective' ? 'perspective' : 'orthographic',
+    loadSymbolSize:
+      candidate.loadSymbolSize === 'small' ||
+      candidate.loadSymbolSize === 'large'
+        ? candidate.loadSymbolSize
+        : 'medium',
+    loadLabelSize:
+      candidate.loadLabelSize === 'medium' ||
+      candidate.loadLabelSize === 'large'
+        ? candidate.loadLabelSize
+        : 'small',
+    loadColorMode:
+      candidate.loadColorMode === 'uniform'
+        ? 'uniform'
+        : 'by-value',
+  };
+}
+
+export function saveFrame3DVisualizationSettings(settings: Frame3DVisualizationSettings) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(
+    VISUALIZATION_SETTINGS_STORAGE_KEY,
+    JSON.stringify(normalizeFrame3DVisualizationSettings(settings)),
+  );
+}
+
+export function loadFrame3DVisualizationSettings(): Frame3DVisualizationSettings {
+  if (typeof window === 'undefined') return DEFAULT_FRAME3D_VISUALIZATION_SETTINGS;
+
+  try {
+    const raw = window.localStorage.getItem(VISUALIZATION_SETTINGS_STORAGE_KEY);
+    if (!raw) return DEFAULT_FRAME3D_VISUALIZATION_SETTINGS;
+
+    return normalizeFrame3DVisualizationSettings(JSON.parse(raw));
+  } catch {
+    return DEFAULT_FRAME3D_VISUALIZATION_SETTINGS;
   }
 }

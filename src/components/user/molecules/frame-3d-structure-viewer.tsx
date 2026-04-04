@@ -5,15 +5,19 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 import {
+  type Frame3DCameraProjection,
   type Frame3DPorticoViewerModel,
   type Frame3DProjectionView,
   type Frame3DSystemResponse,
+  type Frame3DVisualizationSettings,
   type Frame3DViewMode,
 } from '@/features/portico-espacial/model';
 import { cn } from '@/lib/utils';
 
 type Point2D = { x: number; y: number };
 type Point3D = { x: number; y: number; z: number };
+type LoadArrow2D = { base: Point2D; tip: Point2D };
+type LoadArrow3D = { base: Point3D; tip: Point3D };
 
 type Frame3DStation = Frame3DSystemResponse['diagrams'][number]['stations'][number];
 type Frame3DLocalAxes = Frame3DSystemResponse['elements'][number]['localAxes'];
@@ -35,12 +39,86 @@ type Bounds3D = {
   maxZ: number;
 };
 
+type NodalLoadVisual3D = {
+  id: string;
+  arrow: LoadArrow3D;
+  label: string;
+  labelPosition: Point3D;
+  colorHex: number;
+  colorCss: string;
+};
+
+type DistributedLoadVisual3D = {
+  id: string;
+  arrows: LoadArrow3D[];
+  topLineStart: Point3D;
+  topLineEnd: Point3D;
+  label: string;
+  labelPosition: Point3D;
+  colorHex: number;
+  colorCss: string;
+};
+
+type SupportTriangleVisual3D = {
+  id: string;
+  center: Point3D;
+  direction: Point3D;
+  height: number;
+  radius: number;
+};
+
+type SupportRotationVisual3D = {
+  id: string;
+  center: Point3D;
+  side: number;
+};
+
+type SupportVisual3D = {
+  nodeId: string;
+  triangles: SupportTriangleVisual3D[];
+  rotation: SupportRotationVisual3D | null;
+  fitPoints: Point3D[];
+};
+
+type ProjectedNodalLoad = {
+  id: string;
+  arrow: LoadArrow2D;
+  label: string;
+  labelPosition: Point2D;
+};
+
+type ProjectedDistributedLoad = {
+  id: string;
+  arrows: LoadArrow2D[];
+  topLineStart: Point2D;
+  topLineEnd: Point2D;
+  label: string;
+  labelPosition: Point2D;
+};
+
 const FRAME3D_DEBUG_PREFIX = '[Frame3D viewer]';
+const LOAD_COLOR_HEX = 0x0ea5e9;
+const LOAD_COLOR_CSS = '#0ea5e9';
+const LOAD_VALUE_COLORS = ['#0ea5e9', '#14b8a6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+const SUPPORT_FILL_HEX = 0xa8a29e;
+const SUPPORT_STROKE_HEX = 0x475569;
+const LOAD_SYMBOL_LENGTHS: Record<Frame3DVisualizationSettings['loadSymbolSize'], number> = {
+  small: 0.3,
+  medium: 0.5,
+  large: 0.8,
+};
+const LOAD_LABEL_HEIGHTS: Record<Frame3DVisualizationSettings['loadLabelSize'], number> = {
+  small: 0.2,
+  medium: 0.3,
+  large: 0.42,
+};
 
 interface Frame3DStructureViewerProps {
   model: Frame3DPorticoViewerModel;
   result: Frame3DSystemResponse | null;
   projection: Frame3DProjectionView;
+  cameraProjection: Frame3DCameraProjection;
+  visualizationSettings: Frame3DVisualizationSettings;
   viewMode: Frame3DViewMode;
   responseScale?: number;
   className?: string;
@@ -262,6 +340,188 @@ function getBoundsSpan(bounds: Bounds3D): number {
   );
 }
 
+function getNodalLoadMagnitude(load: Frame3DPorticoViewerModel['nodalLoads'][number]): number {
+  return Math.hypot(load.fx, load.fy, load.fz);
+}
+
+function getDistributedLoadMagnitude(load: Frame3DPorticoViewerModel['distributedLoads'][number]): number {
+  return Math.hypot(load.qy, load.qz);
+}
+
+function getNodalArrowLength(
+  magnitude: number,
+  maxMagnitude: number,
+  baseLength: number,
+): number {
+  const ratio = maxMagnitude > 0 ? magnitude / maxMagnitude : 1;
+  return (0.55 + 0.45 * ratio) * baseLength;
+}
+
+function getDistributedArrowLength(
+  magnitude: number,
+  maxMagnitude: number,
+  baseLength: number,
+): number {
+  const ratio = maxMagnitude > 0 ? magnitude / maxMagnitude : 1;
+  return (0.55 + 0.45 * ratio) * baseLength;
+}
+
+function getSupportMarkerHeight(modelSpan: number): number {
+  return Math.min(Math.max(modelSpan * 0.12, 0.42), 1.5);
+}
+
+function formatLoadValue(value: number): string {
+  const absolute = Math.abs(value);
+
+  if (absolute <= 1e-9) {
+    return '0';
+  }
+
+  const rounded =
+    absolute >= 100
+      ? absolute.toFixed(0)
+      : absolute >= 10
+        ? absolute.toFixed(1)
+        : absolute.toFixed(2);
+
+  return rounded.replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+}
+
+function buildLoadLabel(value: number, unit: string): string {
+  return `${formatLoadValue(value)} ${unit}`;
+}
+
+function colorCssToHex(colorCss: string): number {
+  return Number.parseInt(colorCss.replace('#', ''), 16);
+}
+
+function buildLoadColorMap(
+  values: number[],
+  mode: Frame3DVisualizationSettings['loadColorMode'],
+): Map<string, { colorCss: string; colorHex: number }> {
+  if (mode === 'uniform') {
+    return new Map([
+      ['__default__', { colorCss: LOAD_COLOR_CSS, colorHex: LOAD_COLOR_HEX }],
+    ]);
+  }
+
+  const uniqueValues = Array.from(
+    new Set(
+      values
+        .filter((value) => Math.abs(value) > 1e-9)
+        .map((value) => formatLoadValue(value)),
+    ),
+  ).sort((a, b) => Number(a) - Number(b));
+
+  return new Map(
+    uniqueValues.map((value, index) => {
+      const colorCss = LOAD_VALUE_COLORS[index % LOAD_VALUE_COLORS.length]!;
+      return [value, { colorCss, colorHex: colorCssToHex(colorCss) }] as const;
+    }),
+  );
+}
+
+function getLoadColor(
+  value: number,
+  colorMap: Map<string, { colorCss: string; colorHex: number }>,
+  mode: Frame3DVisualizationSettings['loadColorMode'],
+) {
+  if (mode === 'uniform') {
+    return colorMap.get('__default__') ?? { colorCss: LOAD_COLOR_CSS, colorHex: LOAD_COLOR_HEX };
+  }
+
+  return colorMap.get(formatLoadValue(value)) ?? { colorCss: LOAD_COLOR_CSS, colorHex: LOAD_COLOR_HEX };
+}
+
+function getGridSize(modelSpan: number): number {
+  return Math.max(80, Math.ceil((modelSpan * 4) / 5) * 5);
+}
+
+function getGridDivisions(gridSize: number): number {
+  return Math.max(20, Math.round(gridSize / 2));
+}
+
+function toPoint3D(vector: THREE.Vector3): Point3D {
+  return { x: vector.x, y: vector.y, z: vector.z };
+}
+
+function getDistributedLoadDirection(
+  load: Frame3DPorticoViewerModel['distributedLoads'][number],
+  localAxes: Frame3DLocalAxes | undefined,
+): THREE.Vector3 | null {
+  const direction = localAxes
+    ? new THREE.Vector3(
+        -(localAxes.y[0] * load.qy + localAxes.z[0] * load.qz),
+        -(localAxes.y[1] * load.qy + localAxes.z[1] * load.qz),
+        -(localAxes.y[2] * load.qy + localAxes.z[2] * load.qz),
+      )
+    : new THREE.Vector3(
+        0,
+        Math.abs(load.qy) > 1e-9 ? -Math.sign(load.qy) : 0,
+        Math.abs(load.qz) > 1e-9 ? -Math.sign(load.qz) : 0,
+      );
+
+  if (direction.lengthSq() <= 1e-12) {
+    return null;
+  }
+
+  return direction.normalize();
+}
+
+function createTextSprite(text: string, color: string, baseHeight: number): THREE.Sprite | null {
+  const canvas = document.createElement('canvas');
+  const initialContext = canvas.getContext('2d');
+
+  if (!initialContext) {
+    return null;
+  }
+
+  const fontSize = 72;
+  const font = `700 ${fontSize}px "Segoe UI", sans-serif`;
+  initialContext.font = font;
+
+  const metrics = initialContext.measureText(text);
+  const paddingX = 28;
+  const paddingY = 18;
+  const width = Math.max(1, Math.ceil(metrics.width + paddingX * 2));
+  const height = Math.max(1, Math.ceil(fontSize + paddingY * 2));
+
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return null;
+  }
+
+  context.font = font;
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.lineJoin = 'round';
+  context.lineWidth = 12;
+  context.strokeStyle = 'rgba(248,250,252,0.96)';
+  context.strokeText(text, width / 2, height / 2 + 2);
+  context.fillStyle = color;
+  context.fillText(text, width / 2, height / 2 + 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  const aspect = width / height;
+  sprite.scale.set(baseHeight * aspect, baseHeight, 1);
+  sprite.renderOrder = 999;
+
+  return sprite;
+}
+
 function getMaxDisplacementMagnitude(result: Frame3DSystemResponse): number {
   return Math.max(
     ...result.diagrams.flatMap((diagram) =>
@@ -286,10 +546,146 @@ function toPlaneVector(
   return { x: vector.y, y: vector.z };
 }
 
+function getCameraPreset(projection: Frame3DProjectionView): {
+  offsetDirection: THREE.Vector3;
+  up: THREE.Vector3;
+  distanceMultiplier: number;
+  orthographicHeightMultiplier: number;
+} {
+  if (projection === 'xy') {
+    return {
+      offsetDirection: new THREE.Vector3(0, 0, 1),
+      up: new THREE.Vector3(0, 1, 0),
+      distanceMultiplier: 2.4,
+      orthographicHeightMultiplier: 1.8,
+    };
+  }
+
+  if (projection === 'xz') {
+    return {
+      offsetDirection: new THREE.Vector3(0, -1, 0),
+      up: new THREE.Vector3(0, 0, 1),
+      distanceMultiplier: 2.4,
+      orthographicHeightMultiplier: 1.8,
+    };
+  }
+
+  if (projection === 'yz') {
+    return {
+      offsetDirection: new THREE.Vector3(1, 0, 0),
+      up: new THREE.Vector3(0, 0, 1),
+      distanceMultiplier: 2.4,
+      orthographicHeightMultiplier: 1.8,
+    };
+  }
+
+  return {
+    offsetDirection: new THREE.Vector3(2.2, 1.8, 1.6).normalize(),
+    up: new THREE.Vector3(0, 0, 1),
+    distanceMultiplier: 2.8,
+    orthographicHeightMultiplier: 2.1,
+  };
+}
+
+function updateOrthographicFrustum(
+  camera: THREE.OrthographicCamera,
+  aspect: number,
+  frustumHeight: number,
+) {
+  const halfHeight = frustumHeight / 2;
+  const halfWidth = halfHeight * aspect;
+  camera.left = -halfWidth;
+  camera.right = halfWidth;
+  camera.top = halfHeight;
+  camera.bottom = -halfHeight;
+}
+
+function buildSupportVisuals(
+  nodes: Frame3DPorticoViewerModel['nodes'],
+  modelSpan: number,
+): SupportVisual3D[] {
+  const markerHeight = getSupportMarkerHeight(modelSpan);
+  const markerRadius = markerHeight * 0.34;
+  const rotationSide = markerHeight * 1.05;
+  const nodeClearance = Math.max(markerHeight * 0.18, 0.14);
+
+  return nodes.flatMap((node) => {
+    const rotationRestricted = node.support.rx || node.support.ry || node.support.rz;
+    const triangles: SupportTriangleVisual3D[] = [];
+    const fitPoints: Point3D[] = [{ x: node.x, y: node.y, z: node.z }];
+
+    const axisSpecs = [
+      { enabled: node.support.ux, direction: new THREE.Vector3(1, 0, 0), key: 'ux' },
+      { enabled: node.support.uy, direction: new THREE.Vector3(0, 1, 0), key: 'uy' },
+      { enabled: node.support.uz, direction: new THREE.Vector3(0, 0, 1), key: 'uz' },
+    ] as const;
+
+    axisSpecs.forEach((axis) => {
+      if (!axis.enabled) {
+        return;
+      }
+
+      const tipOffset = rotationRestricted
+        ? rotationSide / 2
+        : nodeClearance;
+      const tip = new THREE.Vector3(node.x, node.y, node.z).addScaledVector(
+        axis.direction,
+        -tipOffset,
+      );
+      const center = tip.clone().addScaledVector(axis.direction, -markerHeight / 2);
+
+      triangles.push({
+        id: `${node.id}-${axis.key}`,
+        center: toPoint3D(center),
+        direction: toPoint3D(axis.direction),
+        height: markerHeight,
+        radius: markerRadius,
+      });
+
+      fitPoints.push(
+        toPoint3D(tip),
+        toPoint3D(center.clone().addScaledVector(axis.direction, markerHeight / 2)),
+        toPoint3D(center.clone().addScaledVector(axis.direction, -markerHeight / 2)),
+      );
+    });
+
+    const rotation = rotationRestricted
+      ? {
+          id: `${node.id}-rotation`,
+          center: { x: node.x, y: node.y, z: node.z },
+          side: rotationSide,
+        }
+      : null;
+
+    if (rotation) {
+      const halfSide = rotation.side / 2;
+      fitPoints.push(
+        { x: node.x - halfSide, y: node.y - halfSide, z: node.z - halfSide },
+        { x: node.x + halfSide, y: node.y + halfSide, z: node.z + halfSide },
+      );
+    }
+
+    if (triangles.length === 0 && !rotation) {
+      return [] as SupportVisual3D[];
+    }
+
+    return [
+      {
+        nodeId: node.id,
+        triangles,
+        rotation,
+        fitPoints,
+      },
+    ];
+  });
+}
+
 export function Frame3DStructureViewer({
   model,
   result,
   projection,
+  cameraProjection,
+  visualizationSettings,
   viewMode,
   responseScale = 1,
   className,
@@ -299,13 +695,26 @@ export function Frame3DStructureViewer({
   const diagramComponent = useMemo(() => getDiagramComponent(viewMode), [viewMode]);
   const diagramOffsetConfig = useMemo(() => getDiagramOffsetConfig(viewMode), [viewMode]);
 
-  const modelSpan = useMemo(() => {
-    if (model.nodes.length === 0) return 1;
-    const bounds = getBounds3D(
-      model.nodes.map((node) => ({ x: node.x, y: node.y, z: node.z })),
-    );
-    return getBoundsSpan(bounds);
+  const modelBounds = useMemo(() => {
+    if (model.nodes.length === 0) {
+      return null;
+    }
+
+    return getBounds3D(model.nodes.map((node) => ({ x: node.x, y: node.y, z: node.z })));
   }, [model.nodes]);
+
+  const modelSpan = useMemo(() => {
+    if (!modelBounds) return 1;
+    return getBoundsSpan(modelBounds);
+  }, [modelBounds]);
+
+  const baseLoadSymbolLength = useMemo(() => {
+    return LOAD_SYMBOL_LENGTHS[visualizationSettings.loadSymbolSize];
+  }, [visualizationSettings.loadSymbolSize]);
+
+  const loadLabelHeight = useMemo(() => {
+    return LOAD_LABEL_HEIGHTS[visualizationSettings.loadLabelSize];
+  }, [visualizationSettings.loadLabelSize]);
 
   const elementAxesByLabel = useMemo(() => {
     if (!result) {
@@ -413,17 +822,173 @@ export function Frame3DStructureViewer({
     );
   }, [diagramComponent, diagramOffsetConfig, diagramVisualizationScale, elementAxesByLabel, result, viewMode]);
 
+  const maxNodalLoadMagnitude = useMemo(
+    () => Math.max(...model.nodalLoads.map((load) => getNodalLoadMagnitude(load)), 0),
+    [model.nodalLoads],
+  );
+
+  const maxDistributedLoadMagnitude = useMemo(
+    () => Math.max(...model.distributedLoads.map((load) => getDistributedLoadMagnitude(load)), 0),
+    [model.distributedLoads],
+  );
+
+  const nodalLoadColorMap = useMemo(
+    () =>
+      buildLoadColorMap(
+        model.nodalLoads.map((load) => getNodalLoadMagnitude(load)),
+        visualizationSettings.loadColorMode,
+      ),
+    [model.nodalLoads, visualizationSettings.loadColorMode],
+  );
+
+  const distributedLoadColorMap = useMemo(
+    () =>
+      buildLoadColorMap(
+        model.distributedLoads.map((load) => getDistributedLoadMagnitude(load)),
+        visualizationSettings.loadColorMode,
+      ),
+    [model.distributedLoads, visualizationSettings.loadColorMode],
+  );
+
+  const nodalLoadVisuals3D = useMemo(() => {
+    if (viewMode !== 'carregamentos') {
+      return [] as NodalLoadVisual3D[];
+    }
+
+    return model.nodalLoads.flatMap((load) => {
+      const magnitude = getNodalLoadMagnitude(load);
+      if (magnitude <= 1e-9) {
+        return [] as NodalLoadVisual3D[];
+      }
+      const color = getLoadColor(
+        magnitude,
+        nodalLoadColorMap,
+        visualizationSettings.loadColorMode,
+      );
+
+      const direction = new THREE.Vector3(load.fx, load.fy, load.fz);
+      if (direction.lengthSq() <= 1e-12) {
+        return [] as NodalLoadVisual3D[];
+      }
+
+      direction.normalize();
+
+      const length = getNodalArrowLength(magnitude, maxNodalLoadMagnitude, baseLoadSymbolLength);
+      const tip = new THREE.Vector3(load.x, load.y, load.z);
+      const base = tip.clone().addScaledVector(direction, -length);
+      const labelGap = Math.max(loadLabelHeight * 0.75, 0.35 * length);
+      const labelPosition = base.clone().addScaledVector(direction, -labelGap);
+
+      return [
+        {
+          id: load.id,
+          arrow: {
+            base: toPoint3D(base),
+            tip: toPoint3D(tip),
+          },
+          label: buildLoadLabel(magnitude, 'kN'),
+          labelPosition: toPoint3D(labelPosition),
+          colorHex: color.colorHex,
+          colorCss: color.colorCss,
+        },
+      ];
+    });
+  }, [baseLoadSymbolLength, loadLabelHeight, maxNodalLoadMagnitude, model.nodalLoads, nodalLoadColorMap, viewMode, visualizationSettings.loadColorMode]);
+
+  const distributedLoadVisuals3D = useMemo(() => {
+    if (viewMode !== 'carregamentos') {
+      return [] as DistributedLoadVisual3D[];
+    }
+
+    return model.distributedLoads.flatMap((load) => {
+      const magnitude = getDistributedLoadMagnitude(load);
+      if (magnitude <= 1e-9) {
+        return [] as DistributedLoadVisual3D[];
+      }
+      const color = getLoadColor(
+        magnitude,
+        distributedLoadColorMap,
+        visualizationSettings.loadColorMode,
+      );
+
+      const direction = getDistributedLoadDirection(load, elementAxesByLabel.get(load.elementLabel));
+      if (!direction) {
+        return [] as DistributedLoadVisual3D[];
+      }
+
+      const arrowLength = getDistributedArrowLength(
+        magnitude,
+        maxDistributedLoadMagnitude,
+        baseLoadSymbolLength,
+      );
+      const start = new THREE.Vector3(load.startX, load.startY, load.startZ);
+      const end = new THREE.Vector3(load.endX, load.endY, load.endZ);
+      const topLineStart = start.clone().addScaledVector(direction, -arrowLength);
+      const topLineEnd = end.clone().addScaledVector(direction, -arrowLength);
+      const labelGap = Math.max(loadLabelHeight * 0.75, 0.35 * arrowLength);
+      const labelPosition = topLineStart
+        .clone()
+        .lerp(topLineEnd, 0.5)
+        .addScaledVector(direction, -labelGap);
+
+      const nArrows = 7;
+      const arrows = Array.from({ length: nArrows }, (_, index) => {
+        const t = (index + 0.5) / nArrows;
+        const tip = start.clone().lerp(end, t);
+        const base = tip.clone().addScaledVector(direction, -arrowLength);
+
+        return {
+          base: toPoint3D(base),
+          tip: toPoint3D(tip),
+        };
+      });
+
+      return [
+        {
+          id: load.id,
+          arrows,
+          topLineStart: toPoint3D(topLineStart),
+          topLineEnd: toPoint3D(topLineEnd),
+          label: buildLoadLabel(magnitude, 'kN/m'),
+          labelPosition: toPoint3D(labelPosition),
+          colorHex: color.colorHex,
+          colorCss: color.colorCss,
+        },
+      ];
+    });
+  }, [baseLoadSymbolLength, distributedLoadColorMap, elementAxesByLabel, loadLabelHeight, maxDistributedLoadMagnitude, model.distributedLoads, viewMode, visualizationSettings.loadColorMode]);
+
+  const supportVisuals3D = useMemo(
+    () => buildSupportVisuals(model.nodes, modelSpan),
+    [model.nodes, modelSpan],
+  );
+
   useEffect(() => {
     const basePoints = model.nodes.map((node) => ({ x: node.x, y: node.y, z: node.z }));
     const deformedPoints = deformedLines3D.flatMap((line) => line.points);
     const diagramPoints = diagramLines3D.flatMap((line) => line.points);
-    const fitPoints = [...basePoints, ...deformedPoints, ...diagramPoints].filter(isFinitePoint3D);
+    const nodalLoadPoints = nodalLoadVisuals3D.flatMap((load) => [load.arrow.base, load.arrow.tip, load.labelPosition]);
+    const distributedLoadPoints = distributedLoadVisuals3D.flatMap((load) => [
+      load.topLineStart,
+      load.topLineEnd,
+      load.labelPosition,
+      ...load.arrows.flatMap((arrow) => [arrow.base, arrow.tip]),
+    ]);
+    const fitPoints = [
+      ...basePoints,
+      ...deformedPoints,
+      ...diagramPoints,
+      ...supportVisuals3D.flatMap((support) => support.fitPoints),
+      ...nodalLoadPoints,
+      ...distributedLoadPoints,
+    ].filter(isFinitePoint3D);
     const fitBounds = fitPoints.length > 0 ? getBounds3D(fitPoints) : null;
 
     console.groupCollapsed(`${FRAME3D_DEBUG_PREFIX} ${projection}/${viewMode}`);
     console.log('state', {
       hasResult: Boolean(result),
       projection,
+      cameraProjection,
       viewMode,
       responseScale,
       modelSpan,
@@ -462,10 +1027,9 @@ export function Frame3DStructureViewer({
     }
 
     console.groupEnd();
-  }, [deformVisualizationScale, deformedLines3D, diagramLines3D, diagramVisualizationScale, model.nodes, modelSpan, projection, responseScale, result, viewMode]);
+  }, [cameraProjection, deformVisualizationScale, deformedLines3D, diagramLines3D, diagramVisualizationScale, distributedLoadVisuals3D, model.nodes, modelSpan, nodalLoadVisuals3D, projection, responseScale, result, supportVisuals3D, viewMode]);
 
   useEffect(() => {
-    if (projection !== '3d') return;
     if (!containerRef.current) return;
 
     const mount = containerRef.current;
@@ -477,21 +1041,35 @@ export function Frame3DStructureViewer({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf8fafc);
 
-    const width = mount.clientWidth || 800;
-    const height = mount.clientHeight || 540;
+    let currentWidth = mount.clientWidth || 800;
+    let currentHeight = mount.clientHeight || 540;
+    const aspect = currentWidth / currentHeight;
 
-    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 5000);
-    camera.up.set(0, 0, 1);
-    camera.position.set(18, 14, 18);
+    const camera =
+      cameraProjection === 'orthographic'
+        ? new THREE.OrthographicCamera(-10 * aspect, 10 * aspect, 10, -10, 0.1, 5000)
+        : new THREE.PerspectiveCamera(50, aspect, 0.1, 5000);
+    const initialPreset = getCameraPreset(projection);
+    let orthographicFrustumHeight = Math.max(modelSpan * initialPreset.orthographicHeightMultiplier, 10);
+
+    camera.up.copy(initialPreset.up);
+    camera.position.copy(
+      initialPreset.offsetDirection.clone().multiplyScalar(modelSpan * initialPreset.distanceMultiplier),
+    );
+
+    if (camera instanceof THREE.OrthographicCamera) {
+      updateOrthographicFrustum(camera, aspect, orthographicFrustumHeight);
+    }
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(width, height);
+    renderer.setSize(currentWidth, currentHeight);
     mount.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
+    controls.screenSpacePanning = true;
     controls.target.set(0, 0, 0);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
@@ -500,13 +1078,19 @@ export function Frame3DStructureViewer({
     dirLight.position.set(40, 40, 30);
     scene.add(dirLight);
 
-    const grid = new THREE.GridHelper(40, 20, 0x94a3b8, 0xe2e8f0);
+    const gridSize = getGridSize(modelSpan);
+    const gridDivisions = getGridDivisions(gridSize);
+    const grid = new THREE.GridHelper(gridSize, gridDivisions, 0x94a3b8, 0xe2e8f0);
     // LESM adota Z como eixo vertical; rotacionamos o grid para o plano XY.
     grid.rotateX(Math.PI / 2);
+    if (modelBounds) {
+      grid.position.set(
+        (modelBounds.minX + modelBounds.maxX) / 2,
+        (modelBounds.minY + modelBounds.maxY) / 2,
+        0,
+      );
+    }
     scene.add(grid);
-
-    const axes = new THREE.AxesHelper(Math.max(6, modelSpan * 0.35));
-    scene.add(axes);
 
     if (model.nodes.length > 0) {
       const fitPoints: Point3D[] = model.nodes.map((node) => ({
@@ -523,6 +1107,20 @@ export function Frame3DStructureViewer({
         fitPoints.push(...diagramLines3D.flatMap((line) => line.points));
       }
 
+      fitPoints.push(...supportVisuals3D.flatMap((support) => support.fitPoints));
+
+      if (viewMode === 'carregamentos') {
+        fitPoints.push(...nodalLoadVisuals3D.flatMap((load) => [load.arrow.base, load.arrow.tip, load.labelPosition]));
+        fitPoints.push(
+          ...distributedLoadVisuals3D.flatMap((load) => [
+            load.topLineStart,
+            load.topLineEnd,
+            load.labelPosition,
+            ...load.arrows.flatMap((arrow) => [arrow.base, arrow.tip]),
+          ]),
+        );
+      }
+
       const pointVectors = fitPoints
         .filter(isFinitePoint3D)
         .map(
@@ -534,15 +1132,25 @@ export function Frame3DStructureViewer({
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
         const span = Math.max(size.x, size.y, size.z, 1);
+        const preset = getCameraPreset(projection);
 
         controls.target.copy(center);
-        camera.position.set(
-          center.x + 2.2 * span,
-          center.y + 1.8 * span,
-          center.z + 1.6 * span,
+        camera.up.copy(preset.up);
+        camera.position.copy(
+          center.clone().addScaledVector(preset.offsetDirection, span * preset.distanceMultiplier),
         );
         camera.far = Math.max(5000, span * 100);
+
+        if (camera instanceof THREE.OrthographicCamera) {
+          orthographicFrustumHeight = Math.max(span * preset.orthographicHeightMultiplier, 1);
+          updateOrthographicFrustum(camera, currentWidth / currentHeight, orthographicFrustumHeight);
+        } else {
+          camera.aspect = currentWidth / currentHeight;
+        }
+
+        camera.lookAt(center);
         camera.updateProjectionMatrix();
+        controls.update();
       }
     }
 
@@ -568,6 +1176,59 @@ export function Frame3DStructureViewer({
       const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 12), nodeMaterial);
       sphere.position.set(node.x, node.y, node.z);
       scene.add(sphere);
+    });
+
+    const supportMaterial = new THREE.MeshStandardMaterial({
+      color: SUPPORT_FILL_HEX,
+      roughness: 0.9,
+      metalness: 0.08,
+    });
+    const supportEdgeMaterial = new THREE.LineBasicMaterial({ color: SUPPORT_STROKE_HEX });
+    supportVisuals3D.forEach((support) => {
+      if (support.rotation) {
+        const rotationMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            support.rotation.side,
+            support.rotation.side,
+            support.rotation.side,
+          ),
+          supportMaterial,
+        );
+        rotationMesh.position.set(
+          support.rotation.center.x,
+          support.rotation.center.y,
+          support.rotation.center.z,
+        );
+        scene.add(rotationMesh);
+
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(rotationMesh.geometry),
+          supportEdgeMaterial,
+        );
+        edges.position.copy(rotationMesh.position);
+        scene.add(edges);
+      }
+
+      support.triangles.forEach((triangle) => {
+        const triangleMesh = new THREE.Mesh(
+          new THREE.ConeGeometry(triangle.radius, triangle.height, 3),
+          supportMaterial,
+        );
+        triangleMesh.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0),
+          new THREE.Vector3(triangle.direction.x, triangle.direction.y, triangle.direction.z).normalize(),
+        );
+        triangleMesh.position.set(triangle.center.x, triangle.center.y, triangle.center.z);
+        scene.add(triangleMesh);
+
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(triangleMesh.geometry),
+          supportEdgeMaterial,
+        );
+        edges.position.copy(triangleMesh.position);
+        edges.quaternion.copy(triangleMesh.quaternion);
+        scene.add(edges);
+      });
     });
 
     if (result && viewMode === 'deformada') {
@@ -611,90 +1272,136 @@ export function Frame3DStructureViewer({
     }
 
     if (viewMode === 'carregamentos') {
-      const cyan = 0x0ea5e9;
-      const modelSpan = Math.max(
-        ...model.elements.map((element) =>
-          Math.hypot(
-            element.endX - element.startX,
-            element.endY - element.startY,
-            element.endZ - element.startZ,
-          ),
-        ),
-        1,
-      );
+      nodalLoadVisuals3D.forEach((load) => {
+        const base = new THREE.Vector3(load.arrow.base.x, load.arrow.base.y, load.arrow.base.z);
+        const tip = new THREE.Vector3(load.arrow.tip.x, load.arrow.tip.y, load.arrow.tip.z);
+        const direction = tip.clone().sub(base).normalize();
+        const length = base.distanceTo(tip);
 
-      const maxNodal = Math.max(
-        ...model.nodalLoads.map((load) => Math.hypot(load.fx, load.fy, load.fz)),
-        0,
-      );
-      const maxDist = Math.max(
-        ...model.distributedLoads.map((load) => Math.hypot(load.qy, load.qz)),
-        0,
-      );
-
-      model.nodalLoads.forEach((load) => {
-        const magnitude = Math.hypot(load.fx, load.fy, load.fz);
-        if (magnitude <= 1e-9) return;
-
-        const direction = new THREE.Vector3(load.fx, load.fy, load.fz).normalize();
-        const ratio = maxNodal > 0 ? magnitude / maxNodal : 1;
-        const length = (0.35 + 0.65 * ratio) * (0.25 * modelSpan);
-        const origin = new THREE.Vector3(load.x, load.y, load.z).addScaledVector(direction, -length);
-
-        const arrow = new THREE.ArrowHelper(direction, origin, length, cyan, 0.2 * length, 0.12 * length);
+        const arrow = new THREE.ArrowHelper(
+          direction,
+          base,
+          length,
+          load.colorHex,
+          0.2 * length,
+          0.12 * length,
+        );
         scene.add(arrow);
+
+        const label = createTextSprite(load.label, load.colorCss, loadLabelHeight);
+        if (label) {
+          label.position.set(load.labelPosition.x, load.labelPosition.y, load.labelPosition.z);
+          scene.add(label);
+        }
       });
 
-      model.distributedLoads.forEach((load) => {
-        const magnitude = Math.hypot(load.qy, load.qz);
-        if (magnitude <= 1e-9) return;
+      distributedLoadVisuals3D.forEach((load) => {
+        const topLineMaterial = new THREE.LineBasicMaterial({ color: load.colorHex });
+        const topLine = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(load.topLineStart.x, load.topLineStart.y, load.topLineStart.z),
+          new THREE.Vector3(load.topLineEnd.x, load.topLineEnd.y, load.topLineEnd.z),
+        ]);
+        scene.add(new THREE.Line(topLine, topLineMaterial));
 
-        const localAxes = elementAxesByLabel.get(load.elementLabel);
-        const direction = localAxes
-          ? new THREE.Vector3(
-              -(localAxes.y[0] * load.qy + localAxes.z[0] * load.qz),
-              -(localAxes.y[1] * load.qy + localAxes.z[1] * load.qz),
-              -(localAxes.y[2] * load.qy + localAxes.z[2] * load.qz),
-            )
-          : new THREE.Vector3(
-              0,
-              Math.abs(load.qy) > 1e-9 ? -Math.sign(load.qy) : 0,
-              Math.abs(load.qz) > 1e-9 ? -Math.sign(load.qz) : 0,
-            );
-
-        if (direction.lengthSq() <= 1e-12) return;
-        direction.normalize();
-
-        const ratio = maxDist > 0 ? magnitude / maxDist : 1;
-        const arrowLength = (0.35 + 0.65 * ratio) * (0.2 * modelSpan);
-
-        const start = new THREE.Vector3(load.startX, load.startY, load.startZ);
-        const end = new THREE.Vector3(load.endX, load.endY, load.endZ);
-
-        const nArrows = 7;
-        for (let i = 0; i < nArrows; i++) {
-          const t = (i + 0.5) / nArrows;
-          const p = start.clone().lerp(end, t).addScaledVector(direction, -arrowLength);
+        load.arrows.forEach((arrowLoad) => {
+          const base = new THREE.Vector3(arrowLoad.base.x, arrowLoad.base.y, arrowLoad.base.z);
+          const tip = new THREE.Vector3(arrowLoad.tip.x, arrowLoad.tip.y, arrowLoad.tip.z);
+          const direction = tip.clone().sub(base).normalize();
+          const length = base.distanceTo(tip);
           const arrow = new THREE.ArrowHelper(
             direction,
-            p,
-            arrowLength,
-            cyan,
-            0.2 * arrowLength,
-            0.12 * arrowLength,
+            base,
+            length,
+            load.colorHex,
+            0.2 * length,
+            0.12 * length,
           );
           scene.add(arrow);
+        });
+
+        const label = createTextSprite(load.label, load.colorCss, loadLabelHeight);
+        if (label) {
+          label.position.set(load.labelPosition.x, load.labelPosition.y, load.labelPosition.z);
+          scene.add(label);
         }
       });
     }
 
+    const gizmoScene = new THREE.Scene();
+    const gizmoCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 20);
+    gizmoCamera.position.set(0, 0, 4.5);
+    gizmoCamera.lookAt(0, 0, 0);
+    gizmoScene.add(new THREE.AmbientLight(0xffffff, 1));
+    const gizmoLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    gizmoLight.position.set(2, 3, 4);
+    gizmoScene.add(gizmoLight);
+
+    const gizmoRoot = new THREE.Group();
+    gizmoScene.add(gizmoRoot);
+
+    const gizmoAxisLength = 1.15;
+    const gizmoHeadLength = 0.26;
+    const gizmoHeadRadius = 0.08;
+    const gizmoShaftRadius = 0.024;
+    const gizmoColors = {
+      x: '#ef4444',
+      y: '#f59e0b',
+      z: '#2563eb',
+    } as const;
+
+    const buildGizmoArrow = (
+      axis: 'x' | 'y' | 'z',
+      direction: THREE.Vector3,
+      color: string,
+      labelOffset: THREE.Vector3,
+    ) => {
+      const material = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.35,
+        metalness: 0.15,
+      });
+      const shaftLength = gizmoAxisLength - gizmoHeadLength;
+      const shaft = new THREE.Mesh(
+        new THREE.CylinderGeometry(gizmoShaftRadius, gizmoShaftRadius, shaftLength, 20),
+        material,
+      );
+      shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+      shaft.position.copy(direction.clone().multiplyScalar(shaftLength * 0.5));
+      gizmoRoot.add(shaft);
+
+      const head = new THREE.Mesh(
+        new THREE.ConeGeometry(gizmoHeadRadius, gizmoHeadLength, 20),
+        material,
+      );
+      head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+      head.position.copy(direction.clone().multiplyScalar(shaftLength + gizmoHeadLength * 0.5));
+      gizmoRoot.add(head);
+
+      const label = createTextSprite(axis.toUpperCase(), color, 0.22);
+      if (label) {
+        label.position.copy(direction.clone().multiplyScalar(gizmoAxisLength).add(labelOffset));
+        gizmoRoot.add(label);
+      }
+    };
+
+    buildGizmoArrow('x', new THREE.Vector3(1, 0, 0), gizmoColors.x, new THREE.Vector3(0.16, 0, 0));
+    buildGizmoArrow('y', new THREE.Vector3(0, 1, 0), gizmoColors.y, new THREE.Vector3(0, 0.16, 0));
+    buildGizmoArrow('z', new THREE.Vector3(0, 0, 1), gizmoColors.z, new THREE.Vector3(0, 0, 0.16));
+
     const resize = () => {
       if (!containerRef.current) return;
-      const nextWidth = containerRef.current.clientWidth || 800;
-      const nextHeight = containerRef.current.clientHeight || 540;
-      camera.aspect = nextWidth / nextHeight;
+      currentWidth = containerRef.current.clientWidth || 800;
+      currentHeight = containerRef.current.clientHeight || 540;
+      const nextAspect = currentWidth / currentHeight;
+
+      if (camera instanceof THREE.OrthographicCamera) {
+        updateOrthographicFrustum(camera, nextAspect, orthographicFrustumHeight);
+      } else {
+        camera.aspect = nextAspect;
+      }
+
       camera.updateProjectionMatrix();
-      renderer.setSize(nextWidth, nextHeight);
+      renderer.setSize(currentWidth, currentHeight);
     };
 
     window.addEventListener('resize', resize);
@@ -703,7 +1410,21 @@ export function Frame3DStructureViewer({
     const animate = () => {
       animationFrame = window.requestAnimationFrame(animate);
       controls.update();
+      gizmoRoot.quaternion.copy(camera.quaternion).invert();
+      renderer.autoClear = false;
+      renderer.setViewport(0, 0, currentWidth, currentHeight);
+      renderer.setScissorTest(false);
+      renderer.clear();
       renderer.render(scene, camera);
+
+      const gizmoSize = Math.max(96, Math.min(156, Math.round(Math.min(currentWidth, currentHeight) * 0.18)));
+      const gizmoMargin = 16;
+      renderer.clearDepth();
+      renderer.setScissorTest(true);
+      renderer.setViewport(gizmoMargin, gizmoMargin, gizmoSize, gizmoSize);
+      renderer.setScissor(gizmoMargin, gizmoMargin, gizmoSize, gizmoSize);
+      renderer.render(gizmoScene, gizmoCamera);
+      renderer.setScissorTest(false);
     };
     animate();
 
@@ -717,7 +1438,7 @@ export function Frame3DStructureViewer({
         mount.removeChild(mount.firstChild);
       }
     };
-  }, [deformedLines3D, diagramComponent, diagramLines3D, diagramOffsetConfig, deformVisualizationScale, elementAxesByLabel, elementValueByLabel, maxDiagramValue, model, modelSpan, projection, result, viewMode]);
+  }, [cameraProjection, deformedLines3D, diagramComponent, diagramLines3D, diagramOffsetConfig, deformVisualizationScale, elementValueByLabel, loadLabelHeight, maxDiagramValue, model, modelBounds, modelSpan, nodalLoadVisuals3D, distributedLoadVisuals3D, projection, result, supportVisuals3D, viewMode]);
 
   const projectionScene = useMemo(() => {
     if (projection === '3d') {
@@ -759,9 +1480,49 @@ export function Frame3DStructureViewer({
         : [],
     }));
 
-    const distributedLoadArrows =
+    const projectedNodalLoads =
+      viewMode === 'carregamentos'
+        ? model.nodalLoads.flatMap((load) => {
+            const magnitude = getNodalLoadMagnitude(load);
+            if (magnitude <= 1e-9) {
+              return [] as ProjectedNodalLoad[];
+            }
+
+            const tip = toPlane({ x: load.x, y: load.y, z: load.z }, projection);
+            const force2D = toPlaneVector({ x: load.fx, y: load.fy, z: load.fz }, projection);
+            const forceLen2D = Math.hypot(force2D.x, force2D.y);
+            const arrowLength = getNodalArrowLength(magnitude, maxNodalLoadMagnitude, modelSpan);
+            const ux = forceLen2D > 1e-9 ? force2D.x / forceLen2D : 0;
+            const uy = forceLen2D > 1e-9 ? force2D.y / forceLen2D : -1;
+            const base = {
+              x: tip.x - ux * arrowLength,
+              y: tip.y - uy * arrowLength,
+            };
+            const labelGap = Math.max(0.03 * modelSpan, 0.16 * arrowLength);
+            const labelPosition = {
+              x: base.x - ux * labelGap,
+              y: base.y - uy * labelGap,
+            };
+
+            return [
+              {
+                id: load.id,
+                arrow: { base, tip },
+                label: buildLoadLabel(magnitude, 'kN'),
+                labelPosition,
+              },
+            ];
+          })
+        : [];
+
+    const projectedDistributedLoads =
       viewMode === 'carregamentos'
         ? model.distributedLoads.flatMap((load) => {
+            const magnitude = getDistributedLoadMagnitude(load);
+            if (magnitude <= 1e-9) {
+              return [] as ProjectedDistributedLoad[];
+            }
+
             const s3 = { x: load.startX, y: load.startY, z: load.startZ };
             const e3 = { x: load.endX, y: load.endY, z: load.endZ };
             const s = toPlane(s3, projection);
@@ -769,40 +1530,56 @@ export function Frame3DStructureViewer({
             const dx = e.x - s.x;
             const dy = e.y - s.y;
             const len = Math.hypot(dx, dy);
-            if (len <= 1e-9) return [] as Array<{ base: Point2D; tip: Point2D }>;
+            if (len <= 1e-9) {
+              return [] as ProjectedDistributedLoad[];
+            }
 
-            const localAxes = elementAxesByLabel.get(load.elementLabel);
-            if (localAxes) {
-              const forceGlobal = {
-                x: -(localAxes.y[0] * load.qy + localAxes.z[0] * load.qz),
-                y: -(localAxes.y[1] * load.qy + localAxes.z[1] * load.qz),
-                z: -(localAxes.y[2] * load.qy + localAxes.z[2] * load.qz),
+            const arrowLength = getDistributedArrowLength(magnitude, maxDistributedLoadMagnitude, modelSpan);
+            const labelGap = Math.max(0.03 * modelSpan, 0.16 * arrowLength);
+            const direction = getDistributedLoadDirection(load, elementAxesByLabel.get(load.elementLabel));
+            const direction2D = direction ? toPlaneVector(toPoint3D(direction), projection) : null;
+            const directionLength2D = direction2D ? Math.hypot(direction2D.x, direction2D.y) : 0;
+            const nArrows = 7;
+
+            if (direction2D && directionLength2D > 1e-9) {
+              const ux = direction2D.x / directionLength2D;
+              const uy = direction2D.y / directionLength2D;
+              const topLineStart = {
+                x: s.x - ux * arrowLength,
+                y: s.y - uy * arrowLength,
               };
-              const force2D = toPlaneVector(forceGlobal, projection);
-              const forceLen2D = Math.hypot(force2D.x, force2D.y);
+              const topLineEnd = {
+                x: e.x - ux * arrowLength,
+                y: e.y - uy * arrowLength,
+              };
+              const labelPosition = {
+                x: (topLineStart.x + topLineEnd.x) / 2 - ux * labelGap,
+                y: (topLineStart.y + topLineEnd.y) / 2 - uy * labelGap,
+              };
 
-              if (forceLen2D > 1e-9) {
-                const ux = force2D.x / forceLen2D;
-                const uy = force2D.y / forceLen2D;
-                const nArrows = 7;
-                const arrowLen = 0.45;
-
-                return Array.from({ length: nArrows }, (_, i) => {
-                  const t = (i + 0.5) / nArrows;
-                  const px = s.x + dx * t;
-                  const py = s.y + dy * t;
-                  return {
-                    base: {
-                      x: px - ux * arrowLen,
-                      y: py - uy * arrowLen,
-                    },
-                    tip: {
-                      x: px,
-                      y: py,
-                    },
-                  };
-                });
-              }
+              return [
+                {
+                  id: load.id,
+                  arrows: Array.from({ length: nArrows }, (_, index) => {
+                    const t = (index + 0.5) / nArrows;
+                    const tip = {
+                      x: s.x + dx * t,
+                      y: s.y + dy * t,
+                    };
+                    return {
+                      base: {
+                        x: tip.x - ux * arrowLength,
+                        y: tip.y - uy * arrowLength,
+                      },
+                      tip,
+                    };
+                  }),
+                  topLineStart,
+                  topLineEnd,
+                  label: buildLoadLabel(magnitude, 'kN/m'),
+                  labelPosition,
+                },
+              ];
             }
 
             const nx = -dy / len;
@@ -813,38 +1590,48 @@ export function Frame3DStructureViewer({
                 : Math.abs(load.qy) > 1e-9
                   ? -Math.sign(load.qy)
                   : 0;
-            if (sign === 0) return [] as Array<{ base: Point2D; tip: Point2D }>;
 
-            const nArrows = 7;
-            const offset = 0.35;
-            const arrowLen = 0.45;
+            if (sign === 0) {
+              return [] as ProjectedDistributedLoad[];
+            }
 
-            return Array.from({ length: nArrows }, (_, i) => {
-              const t = (i + 0.5) / nArrows;
-              const px = s.x + dx * t;
-              const py = s.y + dy * t;
-              const tip = {
-                x: px,
-                y: py,
-              };
-              const base = {
-                x: px + nx * sign * arrowLen,
-                y: py + ny * sign * arrowLen,
-              };
-              const shiftedTip = {
-                x: tip.x + nx * sign * offset,
-                y: tip.y + ny * sign * offset,
-              };
-              const shiftedBase = {
-                x: base.x + nx * sign * offset,
-                y: base.y + ny * sign * offset,
-              };
+            const topLineStart = {
+              x: s.x + nx * sign * arrowLength,
+              y: s.y + ny * sign * arrowLength,
+            };
+            const topLineEnd = {
+              x: e.x + nx * sign * arrowLength,
+              y: e.y + ny * sign * arrowLength,
+            };
+            const labelPosition = {
+              x: (topLineStart.x + topLineEnd.x) / 2 + nx * sign * labelGap,
+              y: (topLineStart.y + topLineEnd.y) / 2 + ny * sign * labelGap,
+            };
 
-              return {
-                base: shiftedBase,
-                tip: shiftedTip,
-              };
-            });
+            return [
+              {
+                id: load.id,
+                arrows: Array.from({ length: nArrows }, (_, index) => {
+                  const t = (index + 0.5) / nArrows;
+                  const tip = {
+                    x: s.x + dx * t,
+                    y: s.y + dy * t,
+                  };
+
+                  return {
+                    base: {
+                      x: tip.x + nx * sign * arrowLength,
+                      y: tip.y + ny * sign * arrowLength,
+                    },
+                    tip,
+                  };
+                }),
+                topLineStart,
+                topLineEnd,
+                label: buildLoadLabel(magnitude, 'kN/m'),
+                labelPosition,
+              },
+            ];
           })
         : [];
 
@@ -856,6 +1643,17 @@ export function Frame3DStructureViewer({
       allPoints.push(...line.points);
       allPoints.push(...line.startConnector);
       allPoints.push(...line.endConnector);
+    });
+
+    projectedNodalLoads.forEach((load) => {
+      allPoints.push(load.arrow.base, load.arrow.tip, load.labelPosition);
+    });
+
+    projectedDistributedLoads.forEach((load) => {
+      allPoints.push(load.topLineStart, load.topLineEnd, load.labelPosition);
+      load.arrows.forEach((arrow) => {
+        allPoints.push(arrow.base, arrow.tip);
+      });
     });
 
     if (allPoints.length === 0) {
@@ -879,11 +1677,12 @@ export function Frame3DStructureViewer({
       baseLines,
       deformedLines,
       projectedDiagramLines,
-      distributedLoadArrows,
+      projectedNodalLoads,
+      projectedDistributedLoads,
       viewBox: `0 0 ${targetW} ${targetH}`,
       project,
     };
-  }, [deformedLines3D, diagramLines3D, elementAxesByLabel, model, projection, result, viewMode]);
+  }, [deformedLines3D, diagramLines3D, elementAxesByLabel, maxDistributedLoadMagnitude, maxNodalLoadMagnitude, model, modelSpan, projection, result, viewMode]);
 
   useEffect(() => {
     if (projection === '3d' || !projectionScene) {
@@ -932,7 +1731,8 @@ export function Frame3DStructureViewer({
       baseLineCount: projectionScene.baseLines.length,
       deformedLineCount: projectionScene.deformedLines.length,
       diagramLineCount: projectionScene.projectedDiagramLines.length,
-      distributedLoadArrowCount: projectionScene.distributedLoadArrows.length,
+      nodalLoadCount: projectionScene.projectedNodalLoads.length,
+      distributedLoadCount: projectionScene.projectedDistributedLoads.length,
       viewBox: projectionScene.viewBox,
     });
     console.table(projectedBaseRows);
@@ -948,176 +1748,9 @@ export function Frame3DStructureViewer({
     console.groupEnd();
   }, [projection, projectionScene, viewMode]);
 
-  if (projection === '3d') {
-    return (
-      <div className={cn('h-full min-h-[420px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-white', className)}>
-        <div ref={containerRef} className="h-full w-full" />
-      </div>
-    );
-  }
-
-  if (!projectionScene) {
-    return null;
-  }
-
   return (
     <div className={cn('h-full min-h-[420px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-white', className)}>
-      <svg viewBox={projectionScene.viewBox} className="h-full w-full">
-        <defs>
-          <marker id="arrow-load" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto" markerUnits="strokeWidth">
-            <path d="M 0 0 L 8 4 L 0 8 z" fill="#0ea5e9" />
-          </marker>
-        </defs>
-
-        {projectionScene.baseLines.map((line) => {
-          const s = projectionScene.project(line.start);
-          const e = projectionScene.project(line.end);
-          const ratio = maxDiagramValue > 0 ? (elementValueByLabel.get(line.label) ?? 0) / maxDiagramValue : 0;
-          const stroke = diagramComponent && !diagramOffsetConfig ? colorFromRatio(ratio) : '#0f172a';
-
-          return (
-            <line
-              key={`base-${line.label}`}
-              x1={s.x}
-              y1={s.y}
-              x2={e.x}
-              y2={e.y}
-              stroke={stroke}
-              strokeWidth={3}
-              strokeLinecap="round"
-            />
-          );
-        })}
-
-        {projectionScene.deformedLines.map((line) => {
-          const d = line.points
-            .map((point, index) => {
-              const projected = projectionScene.project(point);
-              return `${index === 0 ? 'M' : 'L'} ${projected.x} ${projected.y}`;
-            })
-            .join(' ');
-
-          return (
-            <path
-              key={`deformed-${line.label}`}
-              d={d}
-              stroke="#ef4444"
-              strokeWidth={3}
-              fill="none"
-              strokeLinecap="round"
-            />
-          );
-        })}
-
-        {projectionScene.projectedDiagramLines.map((line) => {
-          const d = line.points
-            .map((point, index) => {
-              const projected = projectionScene.project(point);
-              return `${index === 0 ? 'M' : 'L'} ${projected.x} ${projected.y}`;
-            })
-            .join(' ');
-
-          return (
-            <g key={`diagram-${line.label}`}>
-              {line.startConnector.length === 2 ? (() => {
-                const start = projectionScene.project(line.startConnector[0]!);
-                const end = projectionScene.project(line.startConnector[1]!);
-                return (
-                  <line
-                    x1={start.x}
-                    y1={start.y}
-                    x2={end.x}
-                    y2={end.y}
-                    stroke="#ef4444"
-                    strokeWidth={2.1}
-                    strokeLinecap="round"
-                  />
-                );
-              })() : null}
-
-              {line.endConnector.length === 2 ? (() => {
-                const start = projectionScene.project(line.endConnector[0]!);
-                const end = projectionScene.project(line.endConnector[1]!);
-                return (
-                  <line
-                    x1={start.x}
-                    y1={start.y}
-                    x2={end.x}
-                    y2={end.y}
-                    stroke="#ef4444"
-                    strokeWidth={2.1}
-                    strokeLinecap="round"
-                  />
-                );
-              })() : null}
-
-              <path
-                d={d}
-                stroke="#ef4444"
-                strokeWidth={3}
-                fill="none"
-                strokeLinecap="round"
-              />
-            </g>
-          );
-        })}
-
-        {model.nodes.map((node) => {
-          const projected = projectionScene.project(
-            toPlane({ x: node.x, y: node.y, z: node.z }, projection),
-          );
-          return (
-            <g key={`node-${node.id}`}>
-              <circle cx={projected.x} cy={projected.y} r={5} fill="#1d4ed8" />
-              <text x={projected.x + 8} y={projected.y - 8} fontSize={12} fill="#0f172a">
-                {node.label}
-              </text>
-            </g>
-          );
-        })}
-
-        {viewMode === 'carregamentos'
-          ? model.nodalLoads.map((load) => {
-              const mag = Math.hypot(load.fx, load.fy, load.fz);
-              if (mag <= 1e-9) return null;
-
-              const p = projectionScene.project(toPlane({ x: load.x, y: load.y, z: load.z }, projection));
-              const target = { x: p.x + 0, y: p.y - 32 };
-
-              return (
-                <line
-                  key={`load-${load.id}`}
-                  x1={target.x}
-                  y1={target.y}
-                  x2={p.x}
-                  y2={p.y}
-                  stroke="#0ea5e9"
-                  strokeWidth={2.2}
-                  markerEnd="url(#arrow-load)"
-                />
-              );
-            })
-          : null}
-
-        {viewMode === 'carregamentos'
-          ? projectionScene.distributedLoadArrows.map((arrow, index) => {
-              const b = projectionScene.project(arrow.base);
-              const t = projectionScene.project(arrow.tip);
-              return (
-                <line
-                  key={`dist-load-${index}`}
-                  x1={b.x}
-                  y1={b.y}
-                  x2={t.x}
-                  y2={t.y}
-                  stroke="#0ea5e9"
-                  strokeWidth={2.1}
-                  markerEnd="url(#arrow-load)"
-                />
-              );
-            })
-          : null}
-      </svg>
+      <div ref={containerRef} className="h-full w-full" />
     </div>
   );
 }

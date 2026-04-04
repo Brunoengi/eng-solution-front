@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Anchor, Building2, ChevronLeft, ChevronRight, FlaskConical, Layers, Plus, Trash2, Waves } from 'lucide-react';
+import { Anchor, Building2, ChevronLeft, ChevronRight, FlaskConical, Layers, Plus, Settings2, Trash2, Waves } from 'lucide-react';
 
 import {
   AppSidebar,
@@ -16,10 +16,13 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   FRAME3D_INPUT_UNITS,
   buildFrame3DPorticoSnapshot,
+  clearFrame3DPorticoSnapshotStorage,
   createUnlockedSupport,
-  loadFrame3DPorticoSnapshot,
-  saveFrame3DPorticoSnapshot,
+  loadFrame3DEditorState,
+  loadFrame3DVisualizationSettings,
+  saveFrame3DEditorState,
   syncSupports,
+  type Frame3DEditorState,
   type Frame3DElementInput,
   type Frame3DLoadInput,
   type Frame3DMaterialInput,
@@ -28,6 +31,7 @@ import {
   type Frame3DProjectionView,
   type Frame3DSystemResponse,
   type Frame3DSupportMap,
+  type Frame3DVisualizationSettings,
   type Frame3DViewMode,
 } from '@/features/portico-espacial/model';
 import { cn } from '@/lib/utils';
@@ -48,14 +52,6 @@ const FRAME3D_DEBUG_VIEW_MODES: Frame3DViewMode[] = [
 type HeaderMode = 'visualizar' | 'modificar';
 type InputMode = 'geometry' | 'supports' | 'materials' | 'loads';
 type SecondaryDock = 'none' | 'examples';
-
-type Frame3DEditorState = {
-  nodes: Frame3DNodeInput[];
-  materials: Frame3DMaterialInput[];
-  elements: Frame3DElementInput[];
-  supports: Frame3DSupportMap;
-  loads: Frame3DLoadInput[];
-};
 
 type Frame3DExamplePreset = {
   id: string;
@@ -112,7 +108,7 @@ function createDefaultState() {
   ];
 
   const supports: Frame3DSupportMap = {
-    [n1]: { ux: true, uy: true, uz: true, rx: true, ry: true, rz: true },
+    [n1]: createUnlockedSupport(),
     [n2]: createUnlockedSupport(),
   };
 
@@ -121,6 +117,141 @@ function createDefaultState() {
   return {
     nodes,
     materials,
+    elements,
+    supports,
+    loads,
+  };
+}
+
+function createOrthogonalBuildingExampleState(): Frame3DEditorState {
+  const xCoordinates = [0, 5, 10, 15, 20];
+  const yCoordinates = [0, 8];
+  const zLevels = [0, 3, 6, 9, 12, 15, 18, 21, 24];
+  const nodes: Frame3DNodeInput[] = [];
+  const supports: Frame3DSupportMap = {};
+  const elements: Frame3DElementInput[] = [];
+  const loads: Frame3DLoadInput[] = [];
+  const edgeMaterialId = 'm1';
+  const intermediateColumnMaterialId = 'm2';
+  const nodeIdByKey = new Map<string, string>();
+  let nodeCounter = 1;
+  let elementCounter = 1;
+  let loadCounter = 1;
+  const minX = Math.min(...xCoordinates);
+  const maxX = Math.max(...xCoordinates);
+  const centerX = (minX + maxX) / 2;
+  const halfSpanX = Math.max((maxX - minX) / 2, 1);
+
+  const getNodeKey = (x: number, y: number, z: number) => `${x}:${y}:${z}`;
+  const getNodeId = (x: number, y: number, z: number) => {
+    const nodeId = nodeIdByKey.get(getNodeKey(x, y, z));
+    if (!nodeId) {
+      throw new Error(`No do edificio nao encontrado para (${x}, ${y}, ${z}).`);
+    }
+    return nodeId;
+  };
+  const isIntermediateColumn = (x: number) => x > minX && x < maxX;
+  const getCentralDistributedLoad = (xPosition: number) => {
+    const normalizedDistance = Math.abs(xPosition - centerX) / halfSpanX;
+    const intensity = 18 - 8 * normalizedDistance;
+    return intensity.toFixed(2).replace(/\.00$/, '');
+  };
+
+  zLevels.forEach((z) => {
+    yCoordinates.forEach((y) => {
+      xCoordinates.forEach((x) => {
+        const nodeId = `n${nodeCounter++}`;
+        nodes.push({ id: nodeId, x: String(x), y: String(y), z: String(z) });
+        nodeIdByKey.set(getNodeKey(x, y, z), nodeId);
+        supports[nodeId] =
+          z === 0
+            ? { ux: true, uy: true, uz: true, rx: false, ry: false, rz: false }
+            : createUnlockedSupport();
+      });
+    });
+  });
+
+  for (let levelIndex = 0; levelIndex < zLevels.length - 1; levelIndex += 1) {
+    const zStart = zLevels[levelIndex];
+    const zEnd = zLevels[levelIndex + 1];
+
+    yCoordinates.forEach((y) => {
+      xCoordinates.forEach((x) => {
+        elements.push({
+          id: `e${elementCounter++}`,
+          nodeI: getNodeId(x, y, zStart),
+          nodeJ: getNodeId(x, y, zEnd),
+          materialId: isIntermediateColumn(x) ? intermediateColumnMaterialId : edgeMaterialId,
+        });
+      });
+    });
+  }
+
+  zLevels.slice(1).forEach((z) => {
+    yCoordinates.forEach((y) => {
+      for (let index = 0; index < xCoordinates.length - 1; index += 1) {
+        const elementId = `e${elementCounter++}`;
+        const midX = (xCoordinates[index] + xCoordinates[index + 1]) / 2;
+        elements.push({
+          id: elementId,
+          nodeI: getNodeId(xCoordinates[index], y, z),
+          nodeJ: getNodeId(xCoordinates[index + 1], y, z),
+          materialId: edgeMaterialId,
+        });
+        loads.push({
+          id: `ld${loadCounter++}`,
+          type: 'distributed',
+          elementId,
+          qy: '0',
+          qz: getCentralDistributedLoad(midX),
+        });
+      }
+    });
+
+    xCoordinates.forEach((x) => {
+      for (let index = 0; index < yCoordinates.length - 1; index += 1) {
+        const elementId = `e${elementCounter++}`;
+        elements.push({
+          id: elementId,
+          nodeI: getNodeId(x, yCoordinates[index], z),
+          nodeJ: getNodeId(x, yCoordinates[index + 1], z),
+          materialId: edgeMaterialId,
+        });
+        loads.push({
+          id: `ld${loadCounter++}`,
+          type: 'distributed',
+          elementId,
+          qy: '0',
+          qz: getCentralDistributedLoad(x),
+        });
+      }
+    });
+  });
+
+  return {
+    nodes,
+    materials: [
+      {
+        id: edgeMaterialId,
+        name: 'Pilares de fachada e vigas',
+        E: '210000',
+        G: '81000',
+        A: '250',
+        Iy: '120000',
+        Iz: '120000',
+        J: '45000',
+      },
+      {
+        id: intermediateColumnMaterialId,
+        name: 'Pilares intermediarios reforcados',
+        E: '210000',
+        G: '81000',
+        A: '400',
+        Iy: '260000',
+        Iz: '260000',
+        J: '90000',
+      },
+    ],
     elements,
     supports,
     loads,
@@ -183,6 +314,14 @@ const FRAME3D_EXAMPLES: Frame3DExamplePreset[] = [
         { id: 'ld8', type: 'distributed', elementId: 'e8', qy: '0', qz: '10' },
       ],
     },
+  },
+  {
+    id: 'edificio-8-andares-10-pilares',
+    title: 'Exemplo 2 - Edificio 8 andares',
+    description:
+      'Edificio espacial ortogonal com 10 pilares, pe-direito de 3 m, vao de 5 m em X, pilares intermediarios mais robustos e cargas distribuidas maiores na regiao central.',
+    testReference: 'test/3d/Core3D/frame3d-building-8-storeys-10-columns.spec.ts',
+    state: createOrthogonalBuildingExampleState(),
   },
 ];
 
@@ -808,6 +947,9 @@ export default function PorticoEspacialPage() {
   const [projection, setProjection] = useState<Frame3DProjectionView>('3d');
   const [viewMode, setViewMode] = useState<Frame3DViewMode>('carregamentos');
   const [responseScale, setResponseScale] = useState(1);
+  const [visualizationSettings] = useState<Frame3DVisualizationSettings>(
+    loadFrame3DVisualizationSettings(),
+  );
 
   const [isProcessingStructure, setIsProcessingStructure] = useState(false);
   const [processingMessage, setProcessingMessage] = useState<string | null>(null);
@@ -818,15 +960,16 @@ export default function PorticoEspacialPage() {
   const nStations = 50;
 
   useEffect(() => {
-    const stored = loadFrame3DPorticoSnapshot();
-    if (!stored) return;
+    const storedEditorState = loadFrame3DEditorState();
+    if (storedEditorState) {
+      setNodes(storedEditorState.nodes);
+      setMaterials(storedEditorState.materials);
+      setElements(storedEditorState.elements);
+      setSupports(syncSupports(storedEditorState.nodes, storedEditorState.supports));
+      setLoads(storedEditorState.loads);
+    }
 
-    setNodes(stored.nodes);
-    setMaterials(stored.materials);
-    setElements(stored.elements);
-    setSupports(syncSupports(stored.nodes, stored.supports));
-    setLoads(stored.loads);
-    setProcessedSnapshot(stored);
+    clearFrame3DPorticoSnapshotStorage();
   }, []);
 
   useEffect(() => {
@@ -866,6 +1009,16 @@ export default function PorticoEspacialPage() {
 
   const viewerSnapshot = processedSnapshotIsCurrent ? processedSnapshot : draftSnapshot;
   const headerMessage = draftErrorMessage ?? processingMessage;
+
+  useEffect(() => {
+    saveFrame3DEditorState({
+      nodes,
+      materials,
+      elements,
+      supports: syncSupports(nodes, supports),
+      loads,
+    });
+  }, [elements, loads, materials, nodes, supports]);
 
   const nodeOptions = nodes.map((node, index) => ({ value: node.id, label: `No ${index + 1}` }));
   const elementOptions = elements.map((element, index) => ({ value: element.id, label: `Barra ${index + 1}` }));
@@ -1032,13 +1185,24 @@ export default function PorticoEspacialPage() {
     dof: keyof Frame3DSupportMap[string],
     value: boolean,
   ) => {
-    setSupports((current) => ({
-      ...current,
-      [nodeId]: {
+    setSupports((current) => {
+      const nextSupport = {
         ...(current[nodeId] ?? createUnlockedSupport()),
-        [dof]: value,
-      },
-    }));
+      };
+
+      if (dof === 'rx' || dof === 'ry' || dof === 'rz') {
+        nextSupport.rx = value;
+        nextSupport.ry = value;
+        nextSupport.rz = value;
+      } else {
+        nextSupport[dof] = value;
+      }
+
+      return {
+        ...current,
+        [nodeId]: nextSupport,
+      };
+    });
   };
 
   const processarEstrutura = async () => {
@@ -1086,7 +1250,6 @@ export default function PorticoEspacialPage() {
 
       debugFrame3DResult(finalSnapshot, activeExampleId);
 
-      saveFrame3DPorticoSnapshot(finalSnapshot);
       setProcessedSnapshot(finalSnapshot);
       setProcessingMessage('Estrutura processada com sucesso.');
     } catch (error) {
@@ -1113,7 +1276,7 @@ export default function PorticoEspacialPage() {
     setLoads(next.loads);
     setProcessedSnapshot(null);
     setActiveExampleId(exampleId);
-    setHeaderMode('modificar');
+    setHeaderMode('visualizar');
     setSecondaryDock('none');
     setProcessingMessage(`Exemplo "${selectedExample.title}" carregado. Clique em "Processar estrutura" para verificar.`);
   };
@@ -1136,6 +1299,20 @@ export default function PorticoEspacialPage() {
     },
   ];
 
+  const configurationItems: MenuItem[] = [
+    {
+      label: 'Configurações',
+      href: '/dashboard/portico-espacial/configuracoes',
+      icon: Settings2,
+      isActive: false,
+    },
+  ];
+
+  const activeCameraProjection =
+    projection === '3d'
+      ? visualizationSettings.camera3dProjection
+      : visualizationSettings.planarProjection;
+
   return (
     <SidebarProvider defaultOpen={false}>
       <CloseDockOnSidebarCollapse onCollapse={() => setSecondaryDock('none')} />
@@ -1143,9 +1320,11 @@ export default function PorticoEspacialPage() {
       <div className="flex w-full">
         <AppSidebar
           menuItems={menuItems}
-          configItems={examplesItems}
+          configItems={configurationItems}
+          exportItems={examplesItems}
           menuGroupLabel="Secao Principal"
-          configGroupLabel="Exemplos"
+          configGroupLabel="Configurações"
+          exportGroupLabel="Exemplos"
           exitHref="/"
         />
         <ExamplesDockPanel
@@ -1431,7 +1610,7 @@ export default function PorticoEspacialPage() {
                             <div key={`support-${node.id}`} className="w-full rounded-xl border border-slate-200 p-3">
                               <p className="mb-2 text-sm font-medium text-slate-800">No {index + 1}</p>
                               <div className="grid grid-cols-2 gap-2 text-xs text-slate-700">
-                                {(['ux', 'uy', 'uz', 'rx', 'ry', 'rz'] as const).map((dof) => (
+                                {(['ux', 'uy', 'uz'] as const).map((dof) => (
                                   <label key={dof} className="flex items-center gap-2 rounded border border-slate-200 px-2 py-1.5">
                                     <input
                                       type="checkbox"
@@ -1444,6 +1623,17 @@ export default function PorticoEspacialPage() {
                                     <span className="text-slate-500">({SUPPORT_DOF_MEANINGS[dof]})</span>
                                   </label>
                                 ))}
+                                <label className="col-span-2 flex items-center gap-2 rounded border border-slate-200 px-2 py-1.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={support.rx && support.ry && support.rz}
+                                    onChange={(event) =>
+                                      updateSupport(node.id, 'rx', event.target.checked)
+                                    }
+                                  />
+                                  <span>rx, ry, rz = 0</span>
+                                  <span className="text-slate-500">(rotacoes em torno de X, Y e Z)</span>
+                                </label>
                               </div>
                             </div>
                           );
@@ -1613,6 +1803,9 @@ export default function PorticoEspacialPage() {
                   </div>
 
                   <div className="flex items-center gap-2 text-sm">
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                      Camera: {activeCameraProjection === 'perspective' ? 'Perspectiva' : 'Ortografica'}
+                    </span>
                     <span className="text-slate-600">Escala resposta</span>
                     <Input
                       className="h-9 w-24"
@@ -1636,6 +1829,8 @@ export default function PorticoEspacialPage() {
                       model={viewerSnapshot.viewerModel}
                       result={processedSnapshotIsCurrent ? viewerSnapshot.result : null}
                       projection={projection}
+                      cameraProjection={activeCameraProjection}
+                      visualizationSettings={visualizationSettings}
                       viewMode={viewMode}
                       responseScale={responseScale}
                       className="h-full"
