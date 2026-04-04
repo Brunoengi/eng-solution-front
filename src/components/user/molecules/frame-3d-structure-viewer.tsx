@@ -1404,7 +1404,15 @@ export function Frame3DStructureViewer({
       renderer.setSize(currentWidth, currentHeight);
     };
 
+    resize();
     window.addEventListener('resize', resize);
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            resize();
+          })
+        : null;
+    resizeObserver?.observe(mount);
 
     let animationFrame = 0;
     const animate = () => {
@@ -1431,6 +1439,7 @@ export function Frame3DStructureViewer({
     return () => {
       window.cancelAnimationFrame(animationFrame);
       window.removeEventListener('resize', resize);
+      resizeObserver?.disconnect();
       controls.dispose();
       renderer.dispose();
       scene.clear();
@@ -1749,7 +1758,7 @@ export function Frame3DStructureViewer({
   }, [projection, projectionScene, viewMode]);
 
   return (
-    <div className={cn('h-full min-h-[420px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-white', className)}>
+    <div className={cn('h-full min-h-[420px] w-full overflow-hidden', className)}>
       <div ref={containerRef} className="h-full w-full" />
     </div>
   );

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   DEFAULT_FRAME3D_VISUALIZATION_SETTINGS,
+  auditFrame3DEditorState,
+  auditFrame3DPorticoSnapshot,
   buildFrame3DPorticoSnapshot,
   loadFrame3DEditorState,
   loadFrame3DPorticoSnapshot,
@@ -124,6 +126,168 @@ describe('buildFrame3DPorticoSnapshot', () => {
         elementId: 'e1',
         qz: -5,
       }),
+    ]);
+  });
+
+  it('audita resumo e consistencia entre input, viewer e solver', () => {
+    const snapshot = buildFrame3DPorticoSnapshot({
+      caseName: 'Auditoria 3D',
+      analysisType: 'static-linear',
+      nodes: [
+        { id: 'n1', x: '0', y: '0', z: '0' },
+        { id: 'n2', x: '6', y: '0', z: '0' },
+        { id: 'n3', x: '6', y: '0', z: '3' },
+      ],
+      materials: [
+        {
+          id: 'm1',
+          name: 'Concreto',
+          E: '30000',
+          G: '12000',
+          A: '200',
+          Iy: '8000',
+          Iz: '12000',
+          J: '16000',
+        },
+      ],
+      elements: [
+        {
+          id: 'e1',
+          nodeI: 'n1',
+          nodeJ: 'n2',
+          materialId: 'm1',
+        },
+        {
+          id: 'e2',
+          nodeI: 'n2',
+          nodeJ: 'n3',
+          materialId: 'm1',
+        },
+      ],
+      supports: {
+        n1: { ux: true, uy: true, uz: true, rx: false, ry: false, rz: false },
+        n2: { ux: false, uy: false, uz: false, rx: false, ry: false, rz: false },
+        n3: { ux: false, uy: false, uz: false, rx: false, ry: false, rz: false },
+      },
+      loads: [
+        {
+          id: 'ln1',
+          type: 'nodal',
+          nodeId: 'n3',
+          fx: '0',
+          fy: '-10',
+          fz: '0',
+          mx: '0',
+          my: '0',
+          mz: '0',
+        },
+        {
+          id: 'ld1',
+          type: 'distributed',
+          elementId: 'e1',
+          qy: '0',
+          qz: '-5',
+        },
+      ],
+      nStations: 50,
+    });
+
+    expect(auditFrame3DPorticoSnapshot(snapshot)).toEqual({
+      summary: {
+        nodeCount: 3,
+        elementCount: 2,
+        materialCount: 1,
+        supportedNodeCount: 1,
+        restrainedDofCount: 3,
+        nodalLoadEntryCount: 1,
+        distributedLoadEntryCount: 1,
+        activeNodalLoadNodeCount: 1,
+        activeDistributedLoadElementCount: 1,
+      },
+      errors: [],
+      warnings: [],
+    });
+  });
+
+  it('sinaliza cargas nulas e entidades soltas na auditoria do editor', () => {
+    const audit = auditFrame3DEditorState({
+      nodes: [
+        { id: 'n1', x: '0', y: '0', z: '0' },
+        { id: 'n2', x: '2', y: '0', z: '0' },
+        { id: 'n3', x: '4', y: '0', z: '0' },
+      ],
+      materials: [
+        {
+          id: 'm1',
+          name: 'Concreto',
+          E: '30000',
+          G: '12000',
+          A: '200',
+          Iy: '8000',
+          Iz: '12000',
+          J: '16000',
+        },
+        {
+          id: 'm2',
+          name: 'Aco',
+          E: '200000',
+          G: '77000',
+          A: '150',
+          Iy: '5000',
+          Iz: '5000',
+          J: '8000',
+        },
+      ],
+      elements: [
+        {
+          id: 'e1',
+          nodeI: 'n1',
+          nodeJ: 'n2',
+          materialId: 'm1',
+        },
+      ],
+      supports: {
+        n1: { ux: true, uy: true, uz: true, rx: false, ry: false, rz: false },
+      },
+      loads: [
+        {
+          id: 'ln1',
+          type: 'nodal',
+          nodeId: 'n2',
+          fx: '0',
+          fy: '0',
+          fz: '0',
+          mx: '0',
+          my: '0',
+          mz: '0',
+        },
+        {
+          id: 'ld1',
+          type: 'distributed',
+          elementId: 'e1',
+          qy: '0',
+          qz: '0',
+        },
+      ],
+    });
+
+    expect(audit.summary).toEqual({
+      nodeCount: 3,
+      elementCount: 1,
+      materialCount: 2,
+      supportedNodeCount: 1,
+      restrainedDofCount: 3,
+      nodalLoadEntryCount: 1,
+      distributedLoadEntryCount: 1,
+      activeNodalLoadNodeCount: 0,
+      activeDistributedLoadElementCount: 0,
+    });
+    expect(audit.errors).toEqual([]);
+    expect(audit.warnings).toEqual([
+      '1 material(is) ainda nao estao associados a nenhuma barra.',
+      '1 no(s) ainda nao estao conectados a nenhuma barra.',
+      'A carga nodal 1 tem intensidade nula e nao aparecera no desenho.',
+      'A carga distribuida 2 tem intensidade nula e nao aparecera no desenho.',
     ]);
   });
 

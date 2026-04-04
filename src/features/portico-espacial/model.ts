@@ -303,6 +303,24 @@ export interface Frame3DPorticoSnapshot extends Frame3DEditorState {
   processedAt: string | null;
 }
 
+export interface Frame3DModelSummary {
+  nodeCount: number;
+  elementCount: number;
+  materialCount: number;
+  supportedNodeCount: number;
+  restrainedDofCount: number;
+  nodalLoadEntryCount: number;
+  distributedLoadEntryCount: number;
+  activeNodalLoadNodeCount: number;
+  activeDistributedLoadElementCount: number;
+}
+
+export interface Frame3DModelAudit {
+  summary: Frame3DModelSummary;
+  errors: string[];
+  warnings: string[];
+}
+
 export const FRAME3D_INPUT_UNITS = {
   length: 'm',
   force: 'kN',
@@ -315,7 +333,8 @@ export const FRAME3D_INPUT_UNITS = {
 
 const STORAGE_KEY = 'eng-solution:portico-espacial:v1';
 const EDITOR_STATE_STORAGE_KEY = 'eng-solution:portico-espacial:editor:v1';
-const VISUALIZATION_SETTINGS_STORAGE_KEY = 'eng-solution:portico-espacial:visualizacao:v1';
+export const FRAME3D_VISUALIZATION_SETTINGS_STORAGE_KEY =
+  'eng-solution:portico-espacial:visualizacao:v1';
 const ZERO_TOL = 1e-9;
 const KN_TO_N = 1000;
 const KNM_TO_NM = 1000;
@@ -331,6 +350,10 @@ export const DEFAULT_FRAME3D_VISUALIZATION_SETTINGS: Frame3DVisualizationSetting
   loadLabelSize: 'small',
   loadColorMode: 'by-value',
 };
+
+let cachedVisualizationSettingsRaw: string | null = null;
+let cachedVisualizationSettingsSnapshot: Frame3DVisualizationSettings =
+  DEFAULT_FRAME3D_VISUALIZATION_SETTINGS;
 
 function parseFiniteNumber(fieldLabel: string, value: string): number {
   const normalized = value.trim();
@@ -348,6 +371,16 @@ function parseFiniteNumber(fieldLabel: string, value: string): number {
 
 function hasSignificantValue(value: number): boolean {
   return Math.abs(value) > ZERO_TOL;
+}
+
+function tryParseFiniteNumber(value: string): number | null {
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function convertForceToSi(valueInKn: number): number {
@@ -458,6 +491,254 @@ function normalizeSupports(nodes: Frame3DNodeInput[], supports: Frame3DSupportMa
 
 export function syncSupports(nodes: Frame3DNodeInput[], supports: Frame3DSupportMap): Frame3DSupportMap {
   return normalizeSupports(nodes, supports);
+}
+
+function uniqueMessages(messages: string[]) {
+  return Array.from(new Set(messages));
+}
+
+function hasAnySupportRestriction(support: Frame3DSupportInput) {
+  return support.ux || support.uy || support.uz || support.rx || support.ry || support.rz;
+}
+
+function hasAnyFiniteNonZeroValue(values: string[]) {
+  return values.some((value) => {
+    const parsed = tryParseFiniteNumber(value);
+    return parsed !== null && hasSignificantValue(parsed);
+  });
+}
+
+export function summarizeFrame3DEditorState(state: Frame3DEditorState): Frame3DModelSummary {
+  const normalizedSupports = normalizeSupports(state.nodes, state.supports);
+  const supportedNodeCount = Object.values(normalizedSupports).filter(hasAnySupportRestriction).length;
+  const restrainedDofCount = Object.values(normalizedSupports).reduce(
+    (count, support) =>
+      count +
+      Number(support.ux) +
+      Number(support.uy) +
+      Number(support.uz) +
+      Number(support.rx) +
+      Number(support.ry) +
+      Number(support.rz),
+    0,
+  );
+
+  const nodalLoadNodeIds = new Set<string>();
+  const distributedLoadElementIds = new Set<string>();
+
+  state.loads.forEach((load) => {
+    if (load.type === 'nodal') {
+      if (hasAnyFiniteNonZeroValue([load.fx, load.fy, load.fz, load.mx, load.my, load.mz])) {
+        nodalLoadNodeIds.add(load.nodeId);
+      }
+      return;
+    }
+
+    if (hasAnyFiniteNonZeroValue([load.qy, load.qz])) {
+      distributedLoadElementIds.add(load.elementId);
+    }
+  });
+
+  return {
+    nodeCount: state.nodes.length,
+    elementCount: state.elements.length,
+    materialCount: state.materials.length,
+    supportedNodeCount,
+    restrainedDofCount,
+    nodalLoadEntryCount: state.loads.filter((load) => load.type === 'nodal').length,
+    distributedLoadEntryCount: state.loads.filter((load) => load.type === 'distributed').length,
+    activeNodalLoadNodeCount: nodalLoadNodeIds.size,
+    activeDistributedLoadElementCount: distributedLoadElementIds.size,
+  };
+}
+
+export function auditFrame3DEditorState(state: Frame3DEditorState): Frame3DModelAudit {
+  const summary = summarizeFrame3DEditorState(state);
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  const duplicateNodeIds = state.nodes
+    .map((node) => node.id)
+    .filter((id, index, list) => Boolean(id) && list.indexOf(id) !== index);
+  if (duplicateNodeIds.length > 0) {
+    errors.push('Existem nos com identificadores repetidos.');
+  }
+
+  const duplicateMaterialIds = state.materials
+    .map((material) => material.id)
+    .filter((id, index, list) => Boolean(id) && list.indexOf(id) !== index);
+  if (duplicateMaterialIds.length > 0) {
+    errors.push('Existem materiais com identificadores repetidos.');
+  }
+
+  const duplicateElementIds = state.elements
+    .map((element) => element.id)
+    .filter((id, index, list) => Boolean(id) && list.indexOf(id) !== index);
+  if (duplicateElementIds.length > 0) {
+    errors.push('Existem barras com identificadores repetidos.');
+  }
+
+  const duplicateLoadIds = state.loads
+    .map((load) => load.id)
+    .filter((id, index, list) => Boolean(id) && list.indexOf(id) !== index);
+  if (duplicateLoadIds.length > 0) {
+    errors.push('Existem carregamentos com identificadores repetidos.');
+  }
+
+  const nodeIds = new Set(state.nodes.map((node) => node.id));
+  const materialIds = new Set(state.materials.map((material) => material.id));
+  const connectedNodeIds = new Set<string>();
+  const usedMaterialIds = new Set<string>();
+  const elementIds = new Set(state.elements.map((element) => element.id));
+
+  state.elements.forEach((element, index) => {
+    const label = `barra ${index + 1}`;
+
+    if (!nodeIds.has(element.nodeI) || !nodeIds.has(element.nodeJ)) {
+      errors.push(`A ${label} referencia nos inexistentes.`);
+    } else {
+      connectedNodeIds.add(element.nodeI);
+      connectedNodeIds.add(element.nodeJ);
+    }
+
+    if (element.nodeI === element.nodeJ && element.nodeI) {
+      errors.push(`A ${label} nao pode ligar o mesmo no nas duas extremidades.`);
+    }
+
+    if (!materialIds.has(element.materialId)) {
+      errors.push(`A ${label} referencia material inexistente.`);
+    } else {
+      usedMaterialIds.add(element.materialId);
+    }
+  });
+
+  const unusedMaterials = state.materials.filter((material) => !usedMaterialIds.has(material.id));
+  if (unusedMaterials.length > 0) {
+    warnings.push(
+      `${unusedMaterials.length} material(is) ainda nao estao associados a nenhuma barra.`,
+    );
+  }
+
+  const isolatedNodes = state.nodes.filter((node) => !connectedNodeIds.has(node.id));
+  if (isolatedNodes.length > 0) {
+    warnings.push(`${isolatedNodes.length} no(s) ainda nao estao conectados a nenhuma barra.`);
+  }
+
+  state.loads.forEach((load, index) => {
+    if (load.type === 'nodal') {
+      if (!nodeIds.has(load.nodeId)) {
+        errors.push(`A carga nodal ${index + 1} referencia um no inexistente.`);
+      }
+
+      const values = [
+        ['Fx', load.fx],
+        ['Fy', load.fy],
+        ['Fz', load.fz],
+        ['Mx', load.mx],
+        ['My', load.my],
+        ['Mz', load.mz],
+      ] as const;
+
+      const hasInvalidValue = values.some(([, value]) => value.trim() !== '' && tryParseFiniteNumber(value) === null);
+      if (hasInvalidValue) {
+        errors.push(`A carga nodal ${index + 1} contem valores nao numericos.`);
+      } else if (!hasAnyFiniteNonZeroValue(values.map(([, value]) => value))) {
+        warnings.push(`A carga nodal ${index + 1} tem intensidade nula e nao aparecera no desenho.`);
+      }
+
+      return;
+    }
+
+    if (!elementIds.has(load.elementId)) {
+      errors.push(`A carga distribuida ${index + 1} referencia uma barra inexistente.`);
+    }
+
+    const values = [load.qy, load.qz];
+    const hasInvalidValue = values.some((value) => value.trim() !== '' && tryParseFiniteNumber(value) === null);
+    if (hasInvalidValue) {
+      errors.push(`A carga distribuida ${index + 1} contem valores nao numericos.`);
+    } else if (!hasAnyFiniteNonZeroValue(values)) {
+      warnings.push(`A carga distribuida ${index + 1} tem intensidade nula e nao aparecera no desenho.`);
+    }
+  });
+
+  if (summary.supportedNodeCount === 0) {
+    errors.push('Informe ao menos um apoio antes de processar o portico espacial.');
+  }
+
+  return {
+    summary,
+    errors: uniqueMessages(errors),
+    warnings: uniqueMessages(warnings),
+  };
+}
+
+export function auditFrame3DPorticoSnapshot(snapshot: Frame3DPorticoSnapshot): Frame3DModelAudit {
+  const baseAudit = auditFrame3DEditorState(snapshot);
+  const errors = [...baseAudit.errors];
+  const warnings = [...baseAudit.warnings];
+
+  if (snapshot.requestBody.nodes.length !== baseAudit.summary.nodeCount) {
+    errors.push('A quantidade de nos enviada ao solver difere do modelo exibido.');
+  }
+
+  if (snapshot.requestBody.elements.length !== baseAudit.summary.elementCount) {
+    errors.push('A quantidade de barras enviada ao solver difere do modelo exibido.');
+  }
+
+  if (snapshot.viewerModel.nodes.length !== baseAudit.summary.nodeCount) {
+    errors.push('Existe no do modelo que nao esta representado no viewer.');
+  }
+
+  if (snapshot.viewerModel.elements.length !== baseAudit.summary.elementCount) {
+    errors.push('Existe barra do modelo que nao esta representada no viewer.');
+  }
+
+  const requestSupportedNodeCount = snapshot.requestBody.nodes.filter(
+    (node) => node.prescribedDisplacements && Object.keys(node.prescribedDisplacements).length > 0,
+  ).length;
+  if (requestSupportedNodeCount !== baseAudit.summary.supportedNodeCount) {
+    errors.push('Existe apoio do modelo que nao esta sendo enviado corretamente ao solver.');
+  }
+
+  const viewerSupportedNodeCount = snapshot.viewerModel.nodes.filter((node) =>
+    hasAnySupportRestriction(node.support),
+  ).length;
+  if (viewerSupportedNodeCount !== baseAudit.summary.supportedNodeCount) {
+    errors.push('Existe apoio do modelo que nao esta representado corretamente no viewer.');
+  }
+
+  const requestNodalLoadNodeCount = snapshot.requestBody.nodes.filter(
+    (node) => node.actions && Object.keys(node.actions).length > 0,
+  ).length;
+  if (requestNodalLoadNodeCount !== baseAudit.summary.activeNodalLoadNodeCount) {
+    errors.push('Existe carga nodal de entrada que nao esta sendo enviada corretamente ao solver.');
+  }
+
+  if (snapshot.viewerModel.nodalLoads.length !== baseAudit.summary.activeNodalLoadNodeCount) {
+    errors.push('Existe carga nodal de entrada que nao esta representada no viewer.');
+  }
+
+  const requestDistributedLoadElementCount = snapshot.requestBody.elements.filter(
+    (element) =>
+      hasSignificantValue(element.qy ?? 0) || hasSignificantValue(element.qz ?? 0),
+  ).length;
+  if (requestDistributedLoadElementCount !== baseAudit.summary.activeDistributedLoadElementCount) {
+    errors.push('Existe carga distribuida de entrada que nao esta sendo enviada corretamente ao solver.');
+  }
+
+  if (
+    snapshot.viewerModel.distributedLoads.length !==
+    baseAudit.summary.activeDistributedLoadElementCount
+  ) {
+    errors.push('Existe carga distribuida de entrada que nao esta representada no viewer.');
+  }
+
+  return {
+    summary: baseAudit.summary,
+    errors: uniqueMessages(errors),
+    warnings: uniqueMessages(warnings),
+  };
 }
 
 function sortObjectEntries<T>(input: Record<string, T>) {
@@ -890,21 +1171,34 @@ function normalizeFrame3DVisualizationSettings(
 
 export function saveFrame3DVisualizationSettings(settings: Frame3DVisualizationSettings) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(
-    VISUALIZATION_SETTINGS_STORAGE_KEY,
-    JSON.stringify(normalizeFrame3DVisualizationSettings(settings)),
-  );
+  const normalized = normalizeFrame3DVisualizationSettings(settings);
+  const serialized = JSON.stringify(normalized);
+  cachedVisualizationSettingsRaw = serialized;
+  cachedVisualizationSettingsSnapshot = normalized;
+  window.localStorage.setItem(FRAME3D_VISUALIZATION_SETTINGS_STORAGE_KEY, serialized);
 }
 
 export function loadFrame3DVisualizationSettings(): Frame3DVisualizationSettings {
   if (typeof window === 'undefined') return DEFAULT_FRAME3D_VISUALIZATION_SETTINGS;
 
   try {
-    const raw = window.localStorage.getItem(VISUALIZATION_SETTINGS_STORAGE_KEY);
-    if (!raw) return DEFAULT_FRAME3D_VISUALIZATION_SETTINGS;
+    const raw = window.localStorage.getItem(FRAME3D_VISUALIZATION_SETTINGS_STORAGE_KEY);
+    if (!raw) {
+      cachedVisualizationSettingsRaw = null;
+      cachedVisualizationSettingsSnapshot = DEFAULT_FRAME3D_VISUALIZATION_SETTINGS;
+      return cachedVisualizationSettingsSnapshot;
+    }
 
-    return normalizeFrame3DVisualizationSettings(JSON.parse(raw));
+    if (raw === cachedVisualizationSettingsRaw) {
+      return cachedVisualizationSettingsSnapshot;
+    }
+
+    cachedVisualizationSettingsRaw = raw;
+    cachedVisualizationSettingsSnapshot = normalizeFrame3DVisualizationSettings(JSON.parse(raw));
+    return cachedVisualizationSettingsSnapshot;
   } catch {
-    return DEFAULT_FRAME3D_VISUALIZATION_SETTINGS;
+    cachedVisualizationSettingsRaw = null;
+    cachedVisualizationSettingsSnapshot = DEFAULT_FRAME3D_VISUALIZATION_SETTINGS;
+    return cachedVisualizationSettingsSnapshot;
   }
 }

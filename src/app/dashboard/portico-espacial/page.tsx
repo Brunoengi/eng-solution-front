@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Anchor, Building2, ChevronLeft, ChevronRight, FlaskConical, Layers, Plus, Settings2, Trash2, Waves } from 'lucide-react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { Anchor, Building2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FlaskConical, Layers, Plus, Settings2, Trash2, Waves } from 'lucide-react';
 
 import {
   AppSidebar,
@@ -14,17 +14,20 @@ import { Input } from '@/components/ui/input';
 import { SidebarProvider, useSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  DEFAULT_FRAME3D_VISUALIZATION_SETTINGS,
+  FRAME3D_VISUALIZATION_SETTINGS_STORAGE_KEY,
   FRAME3D_INPUT_UNITS,
+  auditFrame3DEditorState,
+  auditFrame3DPorticoSnapshot,
   buildFrame3DPorticoSnapshot,
-  clearFrame3DPorticoSnapshotStorage,
   createUnlockedSupport,
-  loadFrame3DEditorState,
   loadFrame3DVisualizationSettings,
-  saveFrame3DEditorState,
-  syncSupports,
+  summarizeFrame3DEditorState,
   type Frame3DEditorState,
   type Frame3DElementInput,
   type Frame3DLoadInput,
+  type Frame3DModelAudit,
+  type Frame3DModelSummary,
   type Frame3DMaterialInput,
   type Frame3DNodeInput,
   type Frame3DPorticoSnapshot,
@@ -34,9 +37,8 @@ import {
   type Frame3DVisualizationSettings,
   type Frame3DViewMode,
 } from '@/features/portico-espacial/model';
+import { useFrame3DWorkspace } from '@/features/portico-espacial/context/frame-3d-workspace-provider';
 import { cn } from '@/lib/utils';
-
-const FRAME3D_SYSTEM_PROXY_PATH = '/api/frame3d/system';
 const FRAME3D_DEBUG_PREFIX = '[Frame3D debug]';
 const FRAME3D_DEBUG_VIEW_MODES: Frame3DViewMode[] = [
   'carregamentos',
@@ -48,10 +50,11 @@ const FRAME3D_DEBUG_VIEW_MODES: Frame3DViewMode[] = [
   'My',
   'Mz',
 ];
+const GEOMETRY_TABLE_PAGE_SIZE = 25;
 
-type HeaderMode = 'visualizar' | 'modificar';
 type InputMode = 'geometry' | 'supports' | 'materials' | 'loads';
 type SecondaryDock = 'none' | 'examples';
+type Frame3DExampleAudit = Frame3DModelAudit & { isValid: boolean };
 
 type Frame3DExamplePreset = {
   id: string;
@@ -59,68 +62,116 @@ type Frame3DExamplePreset = {
   description: string;
   testReference: string;
   state: Frame3DEditorState;
-};
-
-const SUPPORT_DOF_MEANINGS: Record<keyof Frame3DSupportMap[string], string> = {
-  ux: 'translacao em X',
-  uy: 'translacao em Y',
-  uz: 'translacao em Z',
-  rx: 'rotacao em torno de X',
-  ry: 'rotacao em torno de Y',
-  rz: 'rotacao em torno de Z',
+  expectedSummary: Frame3DModelSummary;
 };
 
 function makeId() {
   return Math.random().toString(36).slice(2, 9);
 }
 
-function createDefaultState() {
-  const n1 = makeId();
-  const n2 = makeId();
-  const m1 = makeId();
-  const e1 = makeId();
+function uniqueMessages(messages: string[]) {
+  return Array.from(new Set(messages));
+}
 
-  const nodes: Frame3DNodeInput[] = [
-    { id: n1, x: '0', y: '0', z: '0' },
-    { id: n2, x: '6', y: '0', z: '0' },
-  ];
+function formatShortSignature(signature: string | null) {
+  if (!signature) {
+    return 'indisponivel';
+  }
 
-  const materials: Frame3DMaterialInput[] = [
-    {
-      id: m1,
-      name: 'Material 1',
-      E: '30000',
-      G: '12000',
-      A: '200',
-      Iy: '8000',
-      Iz: '12000',
-      J: '16000',
-    },
-  ];
+  return signature.length <= 16
+    ? signature
+    : `${signature.slice(0, 8)}...${signature.slice(-8)}`;
+}
 
-  const elements: Frame3DElementInput[] = [
-    {
-      id: e1,
-      nodeI: n1,
-      nodeJ: n2,
-      materialId: m1,
-    },
-  ];
+function formatProcessedTimestamp(value: string | null) {
+  if (!value) {
+    return null;
+  }
 
-  const supports: Frame3DSupportMap = {
-    [n1]: createUnlockedSupport(),
-    [n2]: createUnlockedSupport(),
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString('pt-BR');
+}
+
+function subscribeVisualizationSettings(onStoreChange: () => void) {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  const handleStorage = (event: StorageEvent) => {
+    if (
+      event.storageArea === window.localStorage &&
+      event.key === FRAME3D_VISUALIZATION_SETTINGS_STORAGE_KEY
+    ) {
+      onStoreChange();
+    }
   };
 
-  const loads: Frame3DLoadInput[] = [];
+  window.addEventListener('storage', handleStorage);
+  return () => window.removeEventListener('storage', handleStorage);
+}
 
+function buildExampleAudit(example: Frame3DExamplePreset): Frame3DExampleAudit {
+  const baseAudit = auditFrame3DEditorState(example.state);
+  const errors = [...baseAudit.errors];
+  const warnings = [...baseAudit.warnings];
+  let summary = baseAudit.summary;
+
+  try {
+    const snapshot = buildFrame3DPorticoSnapshot({
+      caseName: example.title,
+      analysisType: 'static-linear',
+      nodes: example.state.nodes,
+      materials: example.state.materials,
+      elements: example.state.elements,
+      supports: example.state.supports,
+      loads: example.state.loads,
+      nStations: 50,
+    });
+    const snapshotAudit = auditFrame3DPorticoSnapshot(snapshot);
+    summary = snapshotAudit.summary;
+    errors.push(...snapshotAudit.errors);
+    warnings.push(...snapshotAudit.warnings);
+  } catch (error) {
+    errors.push(
+      error instanceof Error
+        ? error.message
+        : `O exemplo "${example.title}" nao pode ser montado para auditoria.`,
+    );
+  }
+
+  (Object.entries(example.expectedSummary) as Array<[keyof Frame3DModelSummary, number]>).forEach(
+    ([key, expectedValue]) => {
+      if (summary[key] !== expectedValue) {
+        errors.push(
+          `Auditoria do exemplo: ${key} esperado ${expectedValue}, obtido ${summary[key]}.`,
+        );
+      }
+    },
+  );
+
+  const uniqueErrors = uniqueMessages(errors);
   return {
-    nodes,
-    materials,
-    elements,
-    supports,
-    loads,
+    summary,
+    errors: uniqueErrors,
+    warnings: uniqueMessages(warnings),
+    isValid: uniqueErrors.length === 0,
   };
+}
+
+function getPagedItems<T>(items: T[], page: number, pageSize: number) {
+  const start = (page - 1) * pageSize;
+  return {
+    start,
+    items: items.slice(start, start + pageSize),
+  };
+}
+
+function getPageCount(totalItems: number, pageSize: number) {
+  return Math.max(1, Math.ceil(totalItems / pageSize));
 }
 
 function createOrthogonalBuildingExampleState(): Frame3DEditorState {
@@ -264,6 +315,17 @@ const FRAME3D_EXAMPLES: Frame3DExamplePreset[] = [
     title: 'Exemplo 1 - LESM Caso 1',
     description: 'Portico espacial 5x5x5 com 4 pilares e carga distribuida na cobertura.',
     testReference: 'test/Core3D/frame3d-lesm-case-01.spec.ts',
+    expectedSummary: {
+      nodeCount: 8,
+      elementCount: 8,
+      materialCount: 1,
+      supportedNodeCount: 4,
+      restrainedDofCount: 12,
+      nodalLoadEntryCount: 0,
+      distributedLoadEntryCount: 4,
+      activeNodalLoadNodeCount: 0,
+      activeDistributedLoadElementCount: 4,
+    },
     state: {
       nodes: [
         { id: 'n1', x: '0', y: '0', z: '0' },
@@ -321,6 +383,17 @@ const FRAME3D_EXAMPLES: Frame3DExamplePreset[] = [
     description:
       'Edificio espacial ortogonal com 10 pilares, pe-direito de 3 m, vao de 5 m em X, pilares intermediarios mais robustos e cargas distribuidas maiores na regiao central.',
     testReference: 'test/3d/Core3D/frame3d-building-8-storeys-10-columns.spec.ts',
+    expectedSummary: {
+      nodeCount: 90,
+      elementCount: 184,
+      materialCount: 2,
+      supportedNodeCount: 10,
+      restrainedDofCount: 30,
+      nodalLoadEntryCount: 0,
+      distributedLoadEntryCount: 104,
+      activeNodalLoadNodeCount: 0,
+      activeDistributedLoadElementCount: 104,
+    },
     state: createOrthogonalBuildingExampleState(),
   },
 ];
@@ -836,18 +909,6 @@ function debugFrame3DResult(snapshot: Frame3DPorticoSnapshot, activeExampleId: s
   }
 }
 
-function cloneEditorState(state: Frame3DEditorState): Frame3DEditorState {
-  return {
-    nodes: state.nodes.map((node) => ({ ...node })),
-    materials: state.materials.map((material) => ({ ...material })),
-    elements: state.elements.map((element) => ({ ...element })),
-    supports: Object.fromEntries(
-      Object.entries(state.supports).map(([nodeId, support]) => [nodeId, { ...support }]),
-    ),
-    loads: state.loads.map((load) => ({ ...load })),
-  };
-}
-
 function CloseDockOnSidebarCollapse({ onCollapse }: { onCollapse: () => void }) {
   const { state } = useSidebar();
 
@@ -864,12 +925,14 @@ function ExamplesDockPanel({
   open,
   onClose,
   examples,
+  audits,
   activeExampleId,
   onApply,
 }: {
   open: boolean;
   onClose: () => void;
   examples: Frame3DExamplePreset[];
+  audits: Record<string, Frame3DExampleAudit>;
   activeExampleId: string | null;
   onApply: (exampleId: string) => void;
 }) {
@@ -908,6 +971,7 @@ function ExamplesDockPanel({
         <div className="flex-1 space-y-3 overflow-y-auto p-4 text-xs">
           {examples.map((example) => {
             const isActive = activeExampleId === example.id;
+            const audit = audits[example.id];
             return (
               <section
                 key={example.id}
@@ -919,8 +983,49 @@ function ExamplesDockPanel({
                 <h3 className="text-sm font-semibold text-foreground">{example.title}</h3>
                 <p className="text-muted-foreground">{example.description}</p>
                 <p className="text-[11px] text-slate-500">Origem: {example.testReference}</p>
-                <Button type="button" size="sm" className="w-full" onClick={() => onApply(example.id)}>
-                  Carregar exemplo
+                {audit ? (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      <span
+                        className={cn(
+                          'rounded-full px-2 py-1 text-[11px] font-medium',
+                          audit.isValid
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-rose-100 text-rose-800',
+                        )}
+                      >
+                        {audit.isValid ? 'Auditado' : 'Bloqueado'}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-700">
+                        {audit.summary.nodeCount} nos
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-700">
+                        {audit.summary.elementCount} barras
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-700">
+                        {audit.summary.supportedNodeCount} nos apoiados
+                      </span>
+                    </div>
+                    {audit.errors[0] ? (
+                      <p className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] text-rose-900">
+                        {audit.errors[0]}
+                      </p>
+                    ) : null}
+                    {audit.warnings[0] ? (
+                      <p className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+                        {audit.warnings[0]}
+                      </p>
+                    ) : null}
+                  </>
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => onApply(example.id)}
+                  disabled={!audit?.isValid}
+                >
+                  {audit?.isValid ? 'Carregar exemplo' : 'Exemplo indisponivel'}
                 </Button>
               </section>
             );
@@ -931,94 +1036,148 @@ function ExamplesDockPanel({
   );
 }
 
-export default function PorticoEspacialPage() {
-  const defaults = useMemo(() => createDefaultState(), []);
+function TablePaginationControls({
+  page,
+  totalPages,
+  itemCount,
+  label,
+  onPrevious,
+  onNext,
+}: {
+  page: number;
+  totalPages: number;
+  itemCount: number;
+  label: string;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 text-xs text-slate-600">
+      <span>
+        {label}: {itemCount} itens
+      </span>
+      <div className="flex items-center gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={onPrevious} disabled={page <= 1}>
+          Anterior
+        </Button>
+        <span>
+          Pagina {page} de {totalPages}
+        </span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onNext}
+          disabled={page >= totalPages}
+        >
+          Proxima
+        </Button>
+      </div>
+    </div>
+  );
+}
 
-  const [nodes, setNodes] = useState<Frame3DNodeInput[]>(defaults.nodes);
-  const [materials, setMaterials] = useState<Frame3DMaterialInput[]>(defaults.materials);
-  const [elements, setElements] = useState<Frame3DElementInput[]>(defaults.elements);
-  const [supports, setSupports] = useState<Frame3DSupportMap>(defaults.supports);
-  const [loads, setLoads] = useState<Frame3DLoadInput[]>(defaults.loads);
+export default function PorticoEspacialPage() {
+  const {
+    nodes,
+    materials,
+    elements,
+    supports,
+    loads,
+    activeExampleId,
+    headerMode,
+    projection,
+    viewMode,
+    responseScale,
+    draftSnapshot,
+    draftErrorMessage,
+    viewerSnapshot,
+    processedSnapshotIsCurrent,
+    processedSignature,
+    processedAt,
+    isProcessingStructure,
+    processingMessage,
+    setNodes,
+    setMaterials,
+    setElements,
+    setSupports,
+    setLoads,
+    setActiveExampleId,
+    setHeaderMode,
+    setProjection,
+    setViewMode,
+    setResponseScale,
+    setProcessingMessage,
+    replaceEditorState,
+    processStructure,
+  } = useFrame3DWorkspace();
+
   const [inputMode, setInputMode] = useState<InputMode>('geometry');
   const [secondaryDock, setSecondaryDock] = useState<SecondaryDock>('none');
-  const [activeExampleId, setActiveExampleId] = useState<string | null>(null);
-
-  const [headerMode, setHeaderMode] = useState<HeaderMode>('visualizar');
-  const [projection, setProjection] = useState<Frame3DProjectionView>('3d');
-  const [viewMode, setViewMode] = useState<Frame3DViewMode>('carregamentos');
-  const [responseScale, setResponseScale] = useState(1);
-  const [visualizationSettings] = useState<Frame3DVisualizationSettings>(
-    loadFrame3DVisualizationSettings(),
+  const [showPorticoHeader, setShowPorticoHeader] = useState(false);
+  const [nodePage, setNodePage] = useState(1);
+  const [elementPage, setElementPage] = useState(1);
+  const [materialPage, setMaterialPage] = useState(1);
+  const [supportPage, setSupportPage] = useState(1);
+  const [nodalLoadPage, setNodalLoadPage] = useState(1);
+  const [distributedLoadPage, setDistributedLoadPage] = useState(1);
+  const [lastValidatedAudit, setLastValidatedAudit] = useState<Frame3DModelAudit | null>(null);
+  const [hasPendingValidation, setHasPendingValidation] = useState(false);
+  const visualizationSettings = useSyncExternalStore<Frame3DVisualizationSettings>(
+    subscribeVisualizationSettings,
+    loadFrame3DVisualizationSettings,
+    () => DEFAULT_FRAME3D_VISUALIZATION_SETTINGS,
   );
 
-  const [isProcessingStructure, setIsProcessingStructure] = useState(false);
-  const [processingMessage, setProcessingMessage] = useState<string | null>(null);
-  const [processedSnapshot, setProcessedSnapshot] = useState<Frame3DPorticoSnapshot | null>(null);
-
-  const caseName = 'Portico espacial principal';
-  const analysisType = 'static-linear' as const;
-  const nStations = 50;
-
-  useEffect(() => {
-    const storedEditorState = loadFrame3DEditorState();
-    if (storedEditorState) {
-      setNodes(storedEditorState.nodes);
-      setMaterials(storedEditorState.materials);
-      setElements(storedEditorState.elements);
-      setSupports(syncSupports(storedEditorState.nodes, storedEditorState.supports));
-      setLoads(storedEditorState.loads);
-    }
-
-    clearFrame3DPorticoSnapshotStorage();
-  }, []);
-
-  useEffect(() => {
-    setSupports((current) => syncSupports(nodes, current));
-  }, [nodes]);
-
-  const draftState = useMemo(() => {
-    try {
-      return {
-        snapshot: buildFrame3DPorticoSnapshot({
-          caseName,
-          analysisType,
-          nodes,
-          materials,
-          elements,
-          supports,
-          loads,
-          nStations,
-        }),
-        errorMessage: null,
-      };
-    } catch (error) {
-      return {
-        snapshot: null,
-        errorMessage:
-          error instanceof Error ? error.message : 'Revise os dados de entrada.',
-      };
-    }
-  }, [analysisType, caseName, elements, loads, materials, nStations, nodes, supports]);
-
-  const draftSnapshot = draftState.snapshot;
-  const draftErrorMessage = draftState.errorMessage;
-
-  const processedSnapshotIsCurrent =
-    processedSnapshot?.signature === draftSnapshot?.signature &&
-    Boolean(processedSnapshot?.result);
-
-  const viewerSnapshot = processedSnapshotIsCurrent ? processedSnapshot : draftSnapshot;
   const headerMessage = draftErrorMessage ?? processingMessage;
-
-  useEffect(() => {
-    saveFrame3DEditorState({
-      nodes,
-      materials,
-      elements,
-      supports: syncSupports(nodes, supports),
-      loads,
-    });
-  }, [elements, loads, materials, nodes, supports]);
+  const modelSummary = useMemo(
+    () =>
+      summarizeFrame3DEditorState({
+        nodes,
+        materials,
+        elements,
+        supports,
+        loads,
+      }),
+    [elements, loads, materials, nodes, supports],
+  );
+  const exampleAudits = useMemo<Record<string, Frame3DExampleAudit>>(
+    () =>
+      Object.fromEntries(
+        FRAME3D_EXAMPLES.map((example) => [example.id, buildExampleAudit(example)]),
+      ),
+    [],
+  );
+  const activeViewerSnapshot = viewerSnapshot ?? draftSnapshot;
+  const analysisViewRequiresProcessedResult = viewMode !== 'carregamentos';
+  const canRenderCurrentView =
+    Boolean(activeViewerSnapshot) &&
+    (!analysisViewRequiresProcessedResult || processedSnapshotIsCurrent);
+  const hasStaleProcessedResult =
+    Boolean(processedSignature) &&
+    Boolean(draftSnapshot?.signature) &&
+    processedSignature !== draftSnapshot?.signature;
+  const currentModelSignature = draftSnapshot?.signature ?? processedSignature;
+  const processedAtLabel = formatProcessedTimestamp(processedAt);
+  const resultStatus = processedSnapshotIsCurrent
+    ? {
+        label: 'Resultado atual',
+        className: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+      }
+    : hasStaleProcessedResult
+      ? {
+          label: 'Resultado desatualizado',
+          className: 'border-amber-200 bg-amber-50 text-amber-900',
+        }
+      : draftSnapshot
+        ? {
+            label: 'Modelo pronto para processar',
+            className: 'border-sky-200 bg-sky-50 text-sky-900',
+          }
+        : {
+            label: 'Modelo com pendencias',
+            className: 'border-rose-200 bg-rose-50 text-rose-900',
+          };
 
   const nodeOptions = nodes.map((node, index) => ({ value: node.id, label: `No ${index + 1}` }));
   const elementOptions = elements.map((element, index) => ({ value: element.id, label: `Barra ${index + 1}` }));
@@ -1026,11 +1185,81 @@ export default function PorticoEspacialPage() {
     value: material.id,
     label: material.name.trim() || `Material ${index + 1}`,
   }));
+  const nodalLoads = loads.filter(
+    (load): load is Extract<Frame3DLoadInput, { type: 'nodal' }> => load.type === 'nodal',
+  );
+  const distributedLoads = loads.filter(
+    (load): load is Extract<Frame3DLoadInput, { type: 'distributed' }> => load.type === 'distributed',
+  );
+  const totalNodePages = getPageCount(nodes.length, GEOMETRY_TABLE_PAGE_SIZE);
+  const totalElementPages = getPageCount(elements.length, GEOMETRY_TABLE_PAGE_SIZE);
+  const totalMaterialPages = getPageCount(materials.length, GEOMETRY_TABLE_PAGE_SIZE);
+  const totalSupportPages = getPageCount(nodes.length, GEOMETRY_TABLE_PAGE_SIZE);
+  const totalNodalLoadPages = getPageCount(nodalLoads.length, GEOMETRY_TABLE_PAGE_SIZE);
+  const totalDistributedLoadPages = getPageCount(distributedLoads.length, GEOMETRY_TABLE_PAGE_SIZE);
+  const safeNodePage = Math.min(nodePage, totalNodePages);
+  const safeElementPage = Math.min(elementPage, totalElementPages);
+  const safeMaterialPage = Math.min(materialPage, totalMaterialPages);
+  const safeSupportPage = Math.min(supportPage, totalSupportPages);
+  const safeNodalLoadPage = Math.min(nodalLoadPage, totalNodalLoadPages);
+  const safeDistributedLoadPage = Math.min(distributedLoadPage, totalDistributedLoadPages);
+  const pagedNodes = getPagedItems(nodes, safeNodePage, GEOMETRY_TABLE_PAGE_SIZE);
+  const pagedElements = getPagedItems(
+    elements,
+    safeElementPage,
+    GEOMETRY_TABLE_PAGE_SIZE,
+  );
+  const pagedMaterials = getPagedItems(materials, safeMaterialPage, GEOMETRY_TABLE_PAGE_SIZE);
+  const pagedSupports = getPagedItems(nodes, safeSupportPage, GEOMETRY_TABLE_PAGE_SIZE);
+  const pagedNodalLoads = getPagedItems(
+    nodalLoads,
+    safeNodalLoadPage,
+    GEOMETRY_TABLE_PAGE_SIZE,
+  );
+  const pagedDistributedLoads = getPagedItems(
+    distributedLoads,
+    safeDistributedLoadPage,
+    GEOMETRY_TABLE_PAGE_SIZE,
+  );
+
+  const markValidationDirty = () => {
+    setHasPendingValidation(true);
+  };
+
+  const buildCurrentAudit = (): Frame3DModelAudit => {
+    const baseAudit = auditFrame3DEditorState({
+      nodes,
+      materials,
+      elements,
+      supports,
+      loads,
+    });
+
+    if (!draftSnapshot) {
+      return {
+        summary: baseAudit.summary,
+        errors: uniqueMessages([
+          ...baseAudit.errors,
+          ...(draftErrorMessage ? [draftErrorMessage] : []),
+        ]),
+        warnings: baseAudit.warnings,
+      };
+    }
+
+    const snapshotAudit = auditFrame3DPorticoSnapshot(draftSnapshot);
+    return {
+      summary: snapshotAudit.summary,
+      errors: uniqueMessages([...baseAudit.errors, ...snapshotAudit.errors]),
+      warnings: uniqueMessages([...baseAudit.warnings, ...snapshotAudit.warnings]),
+    };
+  };
 
   const addNode = () => {
     const id = makeId();
     setNodes((current) => [...current, { id, x: '', y: '', z: '' }]);
     setSupports((current) => ({ ...current, [id]: createUnlockedSupport() }));
+    setNodePage(getPageCount(nodes.length + 1, GEOMETRY_TABLE_PAGE_SIZE));
+    markValidationDirty();
   };
 
   const removeNode = (id: string) => {
@@ -1054,12 +1283,14 @@ export default function PorticoEspacialPage() {
       delete next[id];
       return next;
     });
+    markValidationDirty();
   };
 
   const updateNode = (id: string, field: keyof Frame3DNodeInput, value: string) => {
     setNodes((current) =>
       current.map((node) => (node.id === id ? { ...node, [field]: value } : node)),
     );
+    markValidationDirty();
   };
 
   const addMaterial = () => {
@@ -1076,6 +1307,8 @@ export default function PorticoEspacialPage() {
         J: '',
       },
     ]);
+    setMaterialPage(getPageCount(materials.length + 1, GEOMETRY_TABLE_PAGE_SIZE));
+    markValidationDirty();
   };
 
   const removeMaterial = (id: string) => {
@@ -1094,6 +1327,7 @@ export default function PorticoEspacialPage() {
 
       return next;
     });
+    markValidationDirty();
   };
 
   const updateMaterial = (id: string, field: keyof Frame3DMaterialInput, value: string) => {
@@ -1102,6 +1336,7 @@ export default function PorticoEspacialPage() {
         material.id === id ? { ...material, [field]: value } : material,
       ),
     );
+    markValidationDirty();
   };
 
   const addElement = () => {
@@ -1116,6 +1351,8 @@ export default function PorticoEspacialPage() {
         materialId: '',
       },
     ]);
+    setElementPage(getPageCount(elements.length + 1, GEOMETRY_TABLE_PAGE_SIZE));
+    markValidationDirty();
   };
 
   const removeElement = (id: string) => {
@@ -1129,6 +1366,7 @@ export default function PorticoEspacialPage() {
         load.type === 'distributed' ? load.elementId !== id : true,
       ),
     );
+    markValidationDirty();
   };
 
   const updateElement = (id: string, field: keyof Frame3DElementInput, value: string) => {
@@ -1137,6 +1375,7 @@ export default function PorticoEspacialPage() {
         element.id === id ? { ...element, [field]: value } : element,
       ),
     );
+    markValidationDirty();
   };
 
   const addNodalLoad = () => {
@@ -1154,6 +1393,8 @@ export default function PorticoEspacialPage() {
         mz: '0',
       },
     ]);
+    setNodalLoadPage(getPageCount(nodalLoads.length + 1, GEOMETRY_TABLE_PAGE_SIZE));
+    markValidationDirty();
   };
 
   const addDistributedLoad = () => {
@@ -1167,6 +1408,8 @@ export default function PorticoEspacialPage() {
         qz: '0',
       },
     ]);
+    setDistributedLoadPage(getPageCount(distributedLoads.length + 1, GEOMETRY_TABLE_PAGE_SIZE));
+    markValidationDirty();
   };
 
   const updateLoad = (
@@ -1174,10 +1417,12 @@ export default function PorticoEspacialPage() {
     updater: (load: Frame3DLoadInput) => Frame3DLoadInput,
   ) => {
     setLoads((current) => current.map((load) => (load.id === id ? updater(load) : load)));
+    markValidationDirty();
   };
 
   const removeLoad = (id: string) => {
     setLoads((current) => current.filter((load) => load.id !== id));
+    markValidationDirty();
   };
 
   const updateSupport = (
@@ -1203,9 +1448,21 @@ export default function PorticoEspacialPage() {
         [nodeId]: nextSupport,
       };
     });
+    markValidationDirty();
   };
 
   const processarEstrutura = async () => {
+    const currentAudit = buildCurrentAudit();
+    setLastValidatedAudit(currentAudit);
+    setHasPendingValidation(false);
+
+    if (currentAudit.errors.length > 0) {
+      setProcessingMessage(
+        `Processamento bloqueado pela auditoria: ${currentAudit.errors[0]}`,
+      );
+      return;
+    }
+
     if (!draftSnapshot) {
       setProcessingMessage(
         draftErrorMessage ?? 'Revise os dados de entrada antes de processar.',
@@ -1213,51 +1470,12 @@ export default function PorticoEspacialPage() {
       return;
     }
 
-    setIsProcessingStructure(true);
-    setProcessingMessage(null);
+    debugFrame3DRequest(draftSnapshot, activeExampleId);
 
-    try {
-      debugFrame3DRequest(draftSnapshot, activeExampleId);
+    const finalSnapshot = await processStructure();
 
-      const response = await fetch(FRAME3D_SYSTEM_PROXY_PATH, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(draftSnapshot.requestBody),
-      });
-
-      const raw = await response.text();
-      let parsed: unknown = raw;
-
-      try {
-        parsed = raw ? JSON.parse(raw) : null;
-      } catch {
-        parsed = raw;
-      }
-
-      if (!response.ok) {
-        const details =
-          typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
-        throw new Error(`Falha no processamento (HTTP ${response.status}): ${details}`);
-      }
-
-      const finalSnapshot: Frame3DPorticoSnapshot = {
-        ...draftSnapshot,
-        result: parsed as Frame3DPorticoSnapshot['result'],
-        processedAt: new Date().toISOString(),
-      };
-
+    if (finalSnapshot?.result) {
       debugFrame3DResult(finalSnapshot, activeExampleId);
-
-      setProcessedSnapshot(finalSnapshot);
-      setProcessingMessage('Estrutura processada com sucesso.');
-    } catch (error) {
-      setProcessingMessage(
-        error instanceof Error ? error.message : 'Erro desconhecido ao processar.',
-      );
-    } finally {
-      setIsProcessingStructure(false);
     }
   };
 
@@ -1267,15 +1485,25 @@ export default function PorticoEspacialPage() {
       return;
     }
 
-    const next = cloneEditorState(selectedExample.state);
+    const exampleAudit = exampleAudits[exampleId];
+    if (!exampleAudit?.isValid) {
+      setProcessingMessage(
+        `Exemplo bloqueado por auditoria: ${exampleAudit?.errors[0] ?? 'revise a configuracao do caso de teste.'}`,
+      );
+      setSecondaryDock('examples');
+      return;
+    }
 
-    setNodes(next.nodes);
-    setMaterials(next.materials);
-    setElements(next.elements);
-    setSupports(syncSupports(next.nodes, next.supports));
-    setLoads(next.loads);
-    setProcessedSnapshot(null);
+    replaceEditorState(selectedExample.state);
     setActiveExampleId(exampleId);
+    setLastValidatedAudit(exampleAudit);
+    setHasPendingValidation(false);
+    setNodePage(1);
+    setElementPage(1);
+    setMaterialPage(1);
+    setSupportPage(1);
+    setNodalLoadPage(1);
+    setDistributedLoadPage(1);
     setHeaderMode('visualizar');
     setSecondaryDock('none');
     setProcessingMessage(`Exemplo "${selectedExample.title}" carregado. Clique em "Processar estrutura" para verificar.`);
@@ -1331,65 +1559,156 @@ export default function PorticoEspacialPage() {
           open={secondaryDock === 'examples'}
           onClose={() => setSecondaryDock('none')}
           examples={FRAME3D_EXAMPLES}
+          audits={exampleAudits}
           activeExampleId={activeExampleId}
           onApply={applyExample}
         />
         <div className="h-screen flex-1 overflow-hidden bg-[linear-gradient(180deg,#eef4fb_0%,#f8fafc_45%,#ffffff_100%)] text-slate-900">
           <section className="mx-auto flex h-full w-full max-w-[1900px] flex-col gap-4 px-4 py-6 md:px-6 lg:px-8">
-            <header className="shrink-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h1 className="text-xl font-semibold text-slate-900">Portico espacial</h1>
-                  <p className="text-sm text-slate-600">
-                    Analise estatica linear 3D com entrada explicita por GDL e diagramas N, Vy, Vz, T, My, Mz.
-                  </p>
-                  <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-                    <p className="font-semibold">Guia rapido de entrada</p>
-                    <p>
-                      Eixos globais: X, Y e Z (coordenadas dos nos em metros). Carregamentos nodais: Fx, Fy,
-                      Fz ({FRAME3D_INPUT_UNITS.force}) e Mx, My, Mz ({FRAME3D_INPUT_UNITS.moment}). Barras usam E,
-                      G, A, Iy, Iz e J em {FRAME3D_INPUT_UNITS.modulus}, {FRAME3D_INPUT_UNITS.area} e {FRAME3D_INPUT_UNITS.inertia}.
-                    </p>
-                  </div>
+            {showPorticoHeader ? (
+              <header className="shrink-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowPorticoHeader(false)}
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900"
+                    aria-expanded={showPorticoHeader}
+                    aria-controls="portico-espacial-header"
+                  >
+                    <ChevronUp className="h-4 w-4" />
+                    Resumo
+                  </button>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-1">
-                    {(['visualizar', 'modificar'] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => setHeaderMode(mode)}
-                        className={cn(
-                          'rounded-full px-4 py-2 text-sm font-medium transition-colors',
-                          headerMode === mode
-                            ? 'bg-white text-slate-900 shadow-sm'
-                            : 'text-slate-600 hover:text-slate-900',
+                <div id="portico-espacial-header" className="mt-3">
+                  {headerMessage ? (
+                    <div
+                      className={cn(
+                        'rounded-xl border px-3 py-2 text-xs',
+                        draftErrorMessage
+                          ? 'border-amber-200 bg-amber-50 text-amber-900'
+                          : 'border-slate-200 bg-slate-50 text-slate-700',
+                      )}
+                    >
+                      {headerMessage}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.75fr)]">
+                    <section className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Resumo do snapshot
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 text-[11px]">
+                          <span className={cn('rounded-full border px-2.5 py-1 font-medium', resultStatus.className)}>
+                            {resultStatus.label}
+                          </span>
+                          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-700">
+                            Snapshot {formatShortSignature(currentModelSignature)}
+                          </span>
+                          {processedAtLabel ? (
+                            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-700">
+                              Processado em {processedAtLabel}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-4">
+                        {[
+                          ['Nos', modelSummary.nodeCount],
+                          ['Barras', modelSummary.elementCount],
+                          ['Materiais', modelSummary.materialCount],
+                          ['Nos apoiados', modelSummary.supportedNodeCount],
+                          ['GDL restritos', modelSummary.restrainedDofCount],
+                          ['Cargas nodais', modelSummary.nodalLoadEntryCount],
+                          ['Cargas distribuidas', modelSummary.distributedLoadEntryCount],
+                          ['Barras carregadas', modelSummary.activeDistributedLoadElementCount],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5">
+                            <p className="text-[9px] uppercase tracking-[0.14em] leading-none text-slate-500">{label}</p>
+                            <p className="mt-1 text-sm font-semibold leading-none text-slate-900">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="rounded-2xl border border-slate-200 bg-white p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Validacao antes do processamento
+                      </p>
+                      <p className="mt-1 text-xs text-slate-700">
+                        A validacao detalhada acontece ao carregar exemplos e ao processar a estrutura.
+                      </p>
+
+                      <div className="mt-3 space-y-2 text-xs">
+                        {hasPendingValidation ? (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-amber-900">
+                            Modelo alterado. A validacao detalhada sera executada quando voce processar a estrutura.
+                          </div>
+                        ) : lastValidatedAudit?.errors.length ? (
+                          <div className="rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-rose-900">
+                            <p className="font-semibold">
+                              {lastValidatedAudit.errors.length} erro(s) bloqueantes encontrados
+                            </p>
+                            <ul className="mt-1.5 list-disc space-y-1 pl-4">
+                              {lastValidatedAudit.errors.slice(0, 4).map((error) => (
+                                <li key={error}>{error}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : lastValidatedAudit ? (
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-emerald-900">
+                            Nenhum erro bloqueante encontrado no snapshot atual.
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-700">
+                            Nenhuma validacao detalhada executada nesta sessao do formulario.
+                          </div>
                         )}
-                      >
-                        {mode === 'visualizar' ? 'Visualizar' : 'Modificar'}
-                      </button>
-                    ))}
-                  </div>
-                  <Button onClick={processarEstrutura} disabled={isProcessingStructure || !draftSnapshot}>
-                    {isProcessingStructure ? 'Processando...' : 'Processar estrutura'}
-                  </Button>
-                </div>
-              </div>
 
-              {headerMessage ? (
-                <div
-                  className={cn(
-                    'mt-4 rounded-xl border px-4 py-3 text-sm',
-                    draftErrorMessage
-                      ? 'border-amber-200 bg-amber-50 text-amber-900'
-                      : 'border-slate-200 bg-slate-50 text-slate-700',
-                  )}
-                >
-                  {headerMessage}
+                        {hasPendingValidation ? (
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-700">
+                            O resumo continua atualizado, mas os avisos detalhados ficam pendentes ate a proxima validacao.
+                          </div>
+                        ) : lastValidatedAudit?.warnings.length ? (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-amber-900">
+                            <p className="font-semibold">
+                              {lastValidatedAudit.warnings.length} aviso(s) para revisar
+                            </p>
+                            <ul className="mt-1.5 list-disc space-y-1 pl-4">
+                              {lastValidatedAudit.warnings.slice(0, 4).map((warning) => (
+                                <li key={warning}>{warning}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : lastValidatedAudit ? (
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-700">
+                            Nenhum aviso pendente. O modelo esta coerente para revisao.
+                          </div>
+                        ) : null}
+                      </div>
+                    </section>
+                  </div>
                 </div>
-              ) : null}
-            </header>
+              </header>
+            ) : (
+              <div className="shrink-0 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowPorticoHeader(true)}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900"
+                  aria-expanded={showPorticoHeader}
+                  aria-controls="portico-espacial-header"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                  Resumo
+                </button>
+              </div>
+            )}
 
             <div
               className={cn(
@@ -1397,6 +1716,91 @@ export default function PorticoEspacialPage() {
                 'grid-cols-1',
               )}
             >
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-0.5">
+                      {(['visualizar', 'modificar'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setHeaderMode(mode)}
+                          className={cn(
+                            'rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                            headerMode === mode
+                              ? 'bg-white text-slate-900 shadow-sm'
+                              : 'text-slate-600 hover:text-slate-900',
+                          )}
+                        >
+                          {mode === 'visualizar' ? 'Visualizar' : 'Modificar'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {headerMode === 'visualizar' ? (
+                      <>
+                        <Tabs value={projection} onValueChange={(value) => setProjection(value as Frame3DProjectionView)}>
+                          <TabsList className="grid grid-cols-4">
+                            <TabsTrigger value="3d">3D</TabsTrigger>
+                            <TabsTrigger value="xy">XY</TabsTrigger>
+                            <TabsTrigger value="xz">XZ</TabsTrigger>
+                            <TabsTrigger value="yz">YZ</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+
+                        <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600">
+                          <span>Resposta</span>
+                          <select
+                            className="min-w-[120px] bg-transparent text-xs font-medium text-slate-900 outline-none"
+                            value={viewMode}
+                            onChange={(event) => setViewMode(event.target.value as Frame3DViewMode)}
+                          >
+                            <option value="carregamentos">Carreg.</option>
+                            <option value="deformada">Deformada</option>
+                            <option value="N">N</option>
+                            <option value="Vy">Vy</option>
+                            <option value="Vz">Vz</option>
+                            <option value="T">T</option>
+                            <option value="My">My</option>
+                            <option value="Mz">Mz</option>
+                          </select>
+                        </label>
+                      </>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    {headerMode === 'visualizar' ? (
+                      <>
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                          Camera: {activeCameraProjection === 'perspective' ? 'Perspectiva' : 'Ortografica'}
+                        </span>
+                        <span className="text-slate-600">Escala resposta</span>
+                        <Input
+                          className="h-9 w-24"
+                          type="number"
+                          min={0.1}
+                          max={50}
+                          step={0.1}
+                          value={responseScale}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            if (!Number.isFinite(value)) return;
+                            setResponseScale(Math.max(0.1, Math.min(50, value)));
+                          }}
+                        />
+                      </>
+                    ) : null}
+                      <Button
+                        onClick={processarEstrutura}
+                        disabled={isProcessingStructure || !draftSnapshot}
+                      >
+                      {isProcessingStructure ? 'Processando...' : 'Processar estrutura'}
+                    </Button>
+                  </div>
+                </div>
+              </section>
+
               {headerMode === 'modificar' ? (
                 <aside className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="space-y-6">
@@ -1406,7 +1810,19 @@ export default function PorticoEspacialPage() {
                           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Dados de entrada</p>
                           <p className="mt-1 text-sm text-slate-700">Edite o modelo por grupo de parâmetros.</p>
                         </div>
-                        <Tabs value={inputMode} onValueChange={(value) => setInputMode(value as InputMode)} className="w-full md:w-auto">
+                        <Tabs
+                          value={inputMode}
+                          onValueChange={(value) => {
+                            setInputMode(value as InputMode);
+                            setNodePage(1);
+                            setElementPage(1);
+                            setMaterialPage(1);
+                            setSupportPage(1);
+                            setNodalLoadPage(1);
+                            setDistributedLoadPage(1);
+                          }}
+                          className="w-full md:w-auto"
+                        >
                           <TabsList className="grid w-full grid-cols-2 gap-1 md:w-fit md:grid-cols-4">
                             <TabsTrigger value="geometry" className="gap-2">
                               <Layers className="h-4 w-4" />
@@ -1428,6 +1844,7 @@ export default function PorticoEspacialPage() {
 
                     {inputMode === 'geometry' ? (
                       <>
+                    <div className="grid gap-4 lg:[grid-template-columns:minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start">
                     <section className="space-y-3">
                       <div className="flex items-center justify-between">
                         <h2 className="text-sm font-semibold text-slate-900">Nos</h2>
@@ -1439,32 +1856,81 @@ export default function PorticoEspacialPage() {
                         Defina a posicao de cada no no sistema global. Unidade das coordenadas: {FRAME3D_INPUT_UNITS.length}.
                       </p>
 
-                      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(320px,380px))]">
-                        {nodes.map((node, index) => (
-                          <div key={node.id} className="w-full rounded-xl border border-slate-200 p-3">
-                            <div className="mb-2 flex items-center justify-between">
-                              <p className="text-sm font-medium text-slate-800">No {index + 1}</p>
-                              <Button size="sm" variant="ghost" onClick={() => removeNode(node.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2">
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">X global ({FRAME3D_INPUT_UNITS.length})</span>
-                                <Input className="h-8" value={node.x} onChange={(event) => updateNode(node.id, 'x', event.target.value)} placeholder="Ex.: 0" />
-                              </label>
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">Y global ({FRAME3D_INPUT_UNITS.length})</span>
-                                <Input className="h-8" value={node.y} onChange={(event) => updateNode(node.id, 'y', event.target.value)} placeholder="Ex.: 0" />
-                              </label>
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">Z global ({FRAME3D_INPUT_UNITS.length})</span>
-                                <Input className="h-8" value={node.z} onChange={(event) => updateNode(node.id, 'z', event.target.value)} placeholder="Ex.: 3" />
-                              </label>
-                            </div>
-                          </div>
-                        ))}
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="min-w-[340px] w-full table-fixed text-sm">
+                          <colgroup>
+                            <col className="w-[28%]" />
+                            <col className="w-[18%]" />
+                            <col className="w-[18%]" />
+                            <col className="w-[18%]" />
+                            <col className="w-[18%]" />
+                          </colgroup>
+                          <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
+                            <tr>
+                              <th className="px-2 py-2 text-left font-semibold">No</th>
+                              <th className="px-2 py-2 text-center font-semibold">X ({FRAME3D_INPUT_UNITS.length})</th>
+                              <th className="px-2 py-2 text-center font-semibold">Y ({FRAME3D_INPUT_UNITS.length})</th>
+                              <th className="px-2 py-2 text-center font-semibold">Z ({FRAME3D_INPUT_UNITS.length})</th>
+                              <th className="px-3 py-2 text-center font-semibold">Acoes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pagedNodes.items.map((node, index) => {
+                              const absoluteIndex = pagedNodes.start + index;
+                              return (
+                                <tr key={node.id} className="border-t border-slate-200">
+                                  <td className="px-2 py-2 font-medium text-slate-800">No {absoluteIndex + 1}</td>
+                                  <td className="px-2 py-2">
+                                    <div className="flex justify-center">
+                                    <Input
+                                      className="h-8 w-[50px]"
+                                      value={node.x}
+                                      onChange={(event) => updateNode(node.id, 'x', event.target.value)}
+                                      placeholder="Ex.: 0"
+                                    />
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-2">
+                                    <div className="flex justify-center">
+                                    <Input
+                                      className="h-8 w-[50px]"
+                                      value={node.y}
+                                      onChange={(event) => updateNode(node.id, 'y', event.target.value)}
+                                      placeholder="Ex.: 0"
+                                    />
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-2">
+                                    <div className="flex justify-center">
+                                    <Input
+                                      className="h-8 w-[50px]"
+                                      value={node.z}
+                                      onChange={(event) => updateNode(node.id, 'z', event.target.value)}
+                                      placeholder="Ex.: 3"
+                                    />
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex justify-center">
+                                    <Button size="sm" variant="ghost" onClick={() => removeNode(node.id)}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
+                      <TablePaginationControls
+                        label="Nos"
+                        itemCount={nodes.length}
+                        page={safeNodePage}
+                        totalPages={totalNodePages}
+                        onPrevious={() => setNodePage(Math.max(1, safeNodePage - 1))}
+                        onNext={() => setNodePage(Math.min(totalNodePages, safeNodePage + 1))}
+                      />
                     </section>
 
                     <section className="space-y-3">
@@ -1478,168 +1944,256 @@ export default function PorticoEspacialPage() {
                         Conecte os nos i-j e selecione o material. Nesta V1, orientacao local e ligacoes semirrigidas nao sao configuradas na tela.
                       </p>
 
-                      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(340px,420px))]">
-                        {elements.map((element, index) => (
-                          <div key={element.id} className="w-full rounded-xl border border-slate-200 p-3">
-                            <div className="mb-2 flex items-center justify-between">
-                              <p className="text-sm font-medium text-slate-800">Barra {index + 1}</p>
-                              <Button size="sm" variant="ghost" onClick={() => removeElement(element.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">No inicial (i)</span>
-                                <select
-                                  className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm"
-                                  value={element.nodeI}
-                                  onChange={(event) => updateElement(element.id, 'nodeI', event.target.value)}
-                                >
-                                  <option value="">Selecione o no i</option>
-                                  {nodeOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">No final (j)</span>
-                                <select
-                                  className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm"
-                                  value={element.nodeJ}
-                                  onChange={(event) => updateElement(element.id, 'nodeJ', event.target.value)}
-                                >
-                                  <option value="">Selecione o no j</option>
-                                  {nodeOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label className="space-y-1 col-span-2">
-                                <span className="text-xs font-medium text-slate-700">Material da barra</span>
-                                <select
-                                  className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm"
-                                  value={element.materialId}
-                                  onChange={(event) => updateElement(element.id, 'materialId', event.target.value)}
-                                >
-                                  <option value="">Selecione o material</option>
-                                  {materialOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                  ))}
-                                </select>
-                              </label>
-
-                            </div>
-                          </div>
-                        ))}
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="min-w-[640px] w-full table-fixed text-sm">
+                          <colgroup>
+                            <col className="w-[22%]" />
+                            <col className="w-[18%]" />
+                            <col className="w-[18%]" />
+                            <col className="w-[30%]" />
+                            <col className="w-[12%]" />
+                          </colgroup>
+                          <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-semibold">Barra</th>
+                              <th className="px-3 py-2 text-center font-semibold">No i</th>
+                              <th className="px-3 py-2 text-center font-semibold">No j</th>
+                              <th className="px-3 py-2 text-center font-semibold">Material</th>
+                              <th className="px-3 py-2 text-center font-semibold">Acoes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pagedElements.items.map((element, index) => {
+                              const absoluteIndex = pagedElements.start + index;
+                              return (
+                                <tr key={element.id} className="border-t border-slate-200">
+                                  <td className="px-3 py-2 font-medium text-slate-800">Barra {absoluteIndex + 1}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex justify-center">
+                                    <select
+                                      className="h-9 w-[100px] rounded-md border border-slate-200 px-2 text-sm"
+                                      value={element.nodeI}
+                                      onChange={(event) => updateElement(element.id, 'nodeI', event.target.value)}
+                                    >
+                                      <option value="">Selecione o no i</option>
+                                      {nodeOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                      ))}
+                                    </select>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex justify-center">
+                                    <select
+                                      className="h-9 w-[100px] rounded-md border border-slate-200 px-2 text-sm"
+                                      value={element.nodeJ}
+                                      onChange={(event) => updateElement(element.id, 'nodeJ', event.target.value)}
+                                    >
+                                      <option value="">Selecione o no j</option>
+                                      {nodeOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                      ))}
+                                    </select>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex justify-center">
+                                    <select
+                                      className="h-9 w-[180px] rounded-md border border-slate-200 px-2 text-sm"
+                                      value={element.materialId}
+                                      onChange={(event) => updateElement(element.id, 'materialId', event.target.value)}
+                                    >
+                                      <option value="">Selecione o material</option>
+                                      {materialOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                      ))}
+                                    </select>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex justify-center">
+                                    <Button size="sm" variant="ghost" onClick={() => removeElement(element.id)}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
+                      <TablePaginationControls
+                        label="Barras"
+                        itemCount={elements.length}
+                        page={safeElementPage}
+                        totalPages={totalElementPages}
+                        onPrevious={() => setElementPage(Math.max(1, safeElementPage - 1))}
+                        onNext={() => setElementPage(Math.min(totalElementPages, safeElementPage + 1))}
+                      />
                     </section>
+                    </div>
                       </>
                     ) : null}
 
                     {inputMode === 'materials' ? (
-                    <section className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h2 className="text-sm font-semibold text-slate-900">Materiais</h2>
-                        <Button size="sm" variant="outline" onClick={addMaterial}>
-                          <Plus className="mr-1 h-4 w-4" /> Adicionar
-                        </Button>
-                      </div>
-                      <p className="text-xs text-slate-500">
-                        Propriedades de entrada: E e G ({FRAME3D_INPUT_UNITS.modulus}), A ({FRAME3D_INPUT_UNITS.area}), Iy/Iz/J ({FRAME3D_INPUT_UNITS.inertia}).
-                      </p>
+                      <section className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h2 className="text-sm font-semibold text-slate-900">Materiais</h2>
+                          <Button size="sm" variant="outline" onClick={addMaterial}>
+                            <Plus className="mr-1 h-4 w-4" /> Adicionar
+                          </Button>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          Propriedades de entrada: E e G ({FRAME3D_INPUT_UNITS.modulus}), A ({FRAME3D_INPUT_UNITS.area}), Iy/Iz/J ({FRAME3D_INPUT_UNITS.inertia}).
+                        </p>
 
-                      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(320px,420px))]">
-                        {materials.map((material, index) => (
-                          <div key={material.id} className="w-full rounded-xl border border-slate-200 p-3">
-                            <div className="mb-2 flex items-center justify-between">
-                              <p className="text-sm font-medium text-slate-800">Material {index + 1}</p>
-                              <Button size="sm" variant="ghost" onClick={() => removeMaterial(material.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-
-                            <div className="space-y-2">
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">Nome do material</span>
-                                <Input className="h-8" value={material.name} onChange={(event) => updateMaterial(material.id, 'name', event.target.value)} placeholder="Ex.: Concreto C30" />
-                              </label>
-                              <div className="grid grid-cols-2 gap-2">
-                                <label className="space-y-1">
-                                  <span className="text-xs font-medium text-slate-700">E ({FRAME3D_INPUT_UNITS.modulus})</span>
-                                  <Input className="h-8" value={material.E} onChange={(event) => updateMaterial(material.id, 'E', event.target.value)} placeholder="Modulo de elasticidade" />
-                                </label>
-                                <label className="space-y-1">
-                                  <span className="text-xs font-medium text-slate-700">G ({FRAME3D_INPUT_UNITS.modulus})</span>
-                                  <Input className="h-8" value={material.G} onChange={(event) => updateMaterial(material.id, 'G', event.target.value)} placeholder="Modulo de cisalhamento" />
-                                </label>
-                                <label className="space-y-1">
-                                  <span className="text-xs font-medium text-slate-700">A ({FRAME3D_INPUT_UNITS.area})</span>
-                                  <Input className="h-8" value={material.A} onChange={(event) => updateMaterial(material.id, 'A', event.target.value)} placeholder="Area da secao" />
-                                </label>
-                                <label className="space-y-1">
-                                  <span className="text-xs font-medium text-slate-700">Iy ({FRAME3D_INPUT_UNITS.inertia})</span>
-                                  <Input className="h-8" value={material.Iy} onChange={(event) => updateMaterial(material.id, 'Iy', event.target.value)} placeholder="Inercia em torno de Y" />
-                                </label>
-                                <label className="space-y-1">
-                                  <span className="text-xs font-medium text-slate-700">Iz ({FRAME3D_INPUT_UNITS.inertia})</span>
-                                  <Input className="h-8" value={material.Iz} onChange={(event) => updateMaterial(material.id, 'Iz', event.target.value)} placeholder="Inercia em torno de Z" />
-                                </label>
-                                <label className="space-y-1">
-                                  <span className="text-xs font-medium text-slate-700">J ({FRAME3D_INPUT_UNITS.inertia})</span>
-                                  <Input className="h-8" value={material.J} onChange={(event) => updateMaterial(material.id, 'J', event.target.value)} placeholder="Constante de torcao" />
-                                </label>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                          <table className="min-w-[980px] w-full table-fixed text-sm">
+                            <colgroup>
+                              <col className="w-[20%]" />
+                              <col className="w-[11%]" />
+                              <col className="w-[11%]" />
+                              <col className="w-[11%]" />
+                              <col className="w-[11%]" />
+                              <col className="w-[11%]" />
+                              <col className="w-[11%]" />
+                              <col className="w-[14%]" />
+                            </colgroup>
+                            <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-semibold">Material</th>
+                                <th className="px-2 py-2 text-center font-semibold">E</th>
+                                <th className="px-2 py-2 text-center font-semibold">G</th>
+                                <th className="px-2 py-2 text-center font-semibold">A</th>
+                                <th className="px-2 py-2 text-center font-semibold">Iy</th>
+                                <th className="px-2 py-2 text-center font-semibold">Iz</th>
+                                <th className="px-2 py-2 text-center font-semibold">J</th>
+                                <th className="px-3 py-2 text-center font-semibold">Acoes</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pagedMaterials.items.map((material, index) => {
+                                const absoluteIndex = pagedMaterials.start + index;
+                                return (
+                                  <tr key={material.id} className="border-t border-slate-200">
+                                    <td className="px-3 py-2">
+                                      <div className="space-y-1">
+                                        <div className="text-sm font-medium text-slate-800">Material {absoluteIndex + 1}</div>
+                                        <Input
+                                          className="h-8"
+                                          value={material.name}
+                                          onChange={(event) => updateMaterial(material.id, 'name', event.target.value)}
+                                          placeholder="Ex.: Concreto C30"
+                                        />
+                                      </div>
+                                    </td>
+                                    {(['E', 'G', 'A', 'Iy', 'Iz', 'J'] as const).map((field) => (
+                                      <td key={field} className="px-2 py-2">
+                                        <div className="flex justify-center">
+                                          <Input
+                                            className="h-8 w-[88px]"
+                                            value={material[field]}
+                                            onChange={(event) => updateMaterial(material.id, field, event.target.value)}
+                                            placeholder={field}
+                                          />
+                                        </div>
+                                      </td>
+                                    ))}
+                                    <td className="px-3 py-2">
+                                      <div className="flex justify-center">
+                                        <Button size="sm" variant="ghost" onClick={() => removeMaterial(material.id)}>
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        <TablePaginationControls
+                          label="Materiais"
+                          itemCount={materials.length}
+                          page={safeMaterialPage}
+                          totalPages={totalMaterialPages}
+                          onPrevious={() => setMaterialPage(Math.max(1, safeMaterialPage - 1))}
+                          onNext={() => setMaterialPage(Math.min(totalMaterialPages, safeMaterialPage + 1))}
+                        />
+                      </section>
                     ) : null}
 
                     {inputMode === 'supports' ? (
-                    <section className="space-y-3">
-                      <h2 className="text-sm font-semibold text-slate-900">Vinculos por GDL</h2>
-                      <p className="text-xs text-slate-500">
-                        Marque o GDL para impor deslocamento/rotacao igual a zero no no selecionado.
-                      </p>
-                      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(320px,420px))]">
-                        {nodes.map((node, index) => {
-                          const support = supports[node.id] ?? createUnlockedSupport();
-                          return (
-                            <div key={`support-${node.id}`} className="w-full rounded-xl border border-slate-200 p-3">
-                              <p className="mb-2 text-sm font-medium text-slate-800">No {index + 1}</p>
-                              <div className="grid grid-cols-2 gap-2 text-xs text-slate-700">
-                                {(['ux', 'uy', 'uz'] as const).map((dof) => (
-                                  <label key={dof} className="flex items-center gap-2 rounded border border-slate-200 px-2 py-1.5">
-                                    <input
-                                      type="checkbox"
-                                      checked={support[dof]}
-                                      onChange={(event) =>
-                                        updateSupport(node.id, dof, event.target.checked)
-                                      }
-                                    />
-                                    <span>{dof} = 0</span>
-                                    <span className="text-slate-500">({SUPPORT_DOF_MEANINGS[dof]})</span>
-                                  </label>
-                                ))}
-                                <label className="col-span-2 flex items-center gap-2 rounded border border-slate-200 px-2 py-1.5">
-                                  <input
-                                    type="checkbox"
-                                    checked={support.rx && support.ry && support.rz}
-                                    onChange={(event) =>
-                                      updateSupport(node.id, 'rx', event.target.checked)
-                                    }
-                                  />
-                                  <span>rx, ry, rz = 0</span>
-                                  <span className="text-slate-500">(rotacoes em torno de X, Y e Z)</span>
-                                </label>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </section>
+                      <section className="space-y-3">
+                        <h2 className="text-sm font-semibold text-slate-900">Vinculos por GDL</h2>
+                        <p className="text-xs text-slate-500">
+                          Marque o GDL para impor deslocamento ou rotacao igual a zero no no selecionado.
+                        </p>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                          <table className="min-w-[640px] w-full table-fixed text-sm">
+                            <colgroup>
+                              <col className="w-[32%]" />
+                              <col className="w-[17%]" />
+                              <col className="w-[17%]" />
+                              <col className="w-[17%]" />
+                              <col className="w-[17%]" />
+                            </colgroup>
+                            <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-semibold">No</th>
+                                <th className="px-2 py-2 text-center font-semibold">ux = 0</th>
+                                <th className="px-2 py-2 text-center font-semibold">uy = 0</th>
+                                <th className="px-2 py-2 text-center font-semibold">uz = 0</th>
+                                <th className="px-2 py-2 text-center font-semibold">rx, ry, rz = 0</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pagedSupports.items.map((node, index) => {
+                                const absoluteIndex = pagedSupports.start + index;
+                                const support = supports[node.id] ?? createUnlockedSupport();
+                                return (
+                                  <tr key={`support-${node.id}`} className="border-t border-slate-200">
+                                    <td className="px-3 py-2 font-medium text-slate-800">No {absoluteIndex + 1}</td>
+                                    {(['ux', 'uy', 'uz'] as const).map((dof) => (
+                                      <td key={dof} className="px-2 py-2">
+                                        <div className="flex justify-center">
+                                          <input
+                                            type="checkbox"
+                                            className="h-4 w-4"
+                                            checked={support[dof]}
+                                            onChange={(event) => updateSupport(node.id, dof, event.target.checked)}
+                                            aria-label={`${dof} do no ${absoluteIndex + 1}`}
+                                          />
+                                        </div>
+                                      </td>
+                                    ))}
+                                    <td className="px-2 py-2">
+                                      <div className="flex justify-center">
+                                        <input
+                                          type="checkbox"
+                                          className="h-4 w-4"
+                                          checked={support.rx && support.ry && support.rz}
+                                          onChange={(event) => updateSupport(node.id, 'rx', event.target.checked)}
+                                          aria-label={`rotacoes do no ${absoluteIndex + 1}`}
+                                        />
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        <TablePaginationControls
+                          label="Apoios"
+                          itemCount={nodes.length}
+                          page={safeSupportPage}
+                          totalPages={totalSupportPages}
+                          onPrevious={() => setSupportPage(Math.max(1, safeSupportPage - 1))}
+                          onNext={() => setSupportPage(Math.min(totalSupportPages, safeSupportPage + 1))}
+                        />
+                      </section>
                     ) : null}
 
                     {inputMode === 'loads' ? (
@@ -1655,64 +2209,87 @@ export default function PorticoEspacialPage() {
                         Forcas globais no no: Fx/Fy/Fz ({FRAME3D_INPUT_UNITS.force}). Momentos no no: Mx/My/Mz ({FRAME3D_INPUT_UNITS.moment}).
                       </p>
 
-                      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(340px,420px))]">
-                        {loads
-                          .filter((load) => load.type === 'nodal')
-                          .map((load) => (
-                          <div key={load.id} className="w-full rounded-xl border border-slate-200 p-3">
-                            <div className="mb-2 flex items-center justify-between">
-                              <p className="text-sm font-medium text-slate-800">Carga nodal</p>
-                              <Button size="sm" variant="ghost" onClick={() => removeLoad(load.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <label className="space-y-1 col-span-2">
-                                <span className="text-xs font-medium text-slate-700">No de aplicacao</span>
-                                <select
-                                  className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm"
-                                  value={load.nodeId}
-                                  onChange={(event) =>
-                                    updateLoad(load.id, (current) => ({
-                                      ...(current as typeof load),
-                                      nodeId: event.target.value,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Selecione o no</option>
-                                  {nodeOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">Fx ({FRAME3D_INPUT_UNITS.force})</span>
-                                <Input value={load.fx} onChange={(event) => updateLoad(load.id, (current) => ({ ...(current as typeof load), fx: event.target.value }))} placeholder="Forca em X" />
-                              </label>
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">Fy ({FRAME3D_INPUT_UNITS.force})</span>
-                                <Input value={load.fy} onChange={(event) => updateLoad(load.id, (current) => ({ ...(current as typeof load), fy: event.target.value }))} placeholder="Forca em Y" />
-                              </label>
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">Fz ({FRAME3D_INPUT_UNITS.force})</span>
-                                <Input value={load.fz} onChange={(event) => updateLoad(load.id, (current) => ({ ...(current as typeof load), fz: event.target.value }))} placeholder="Forca em Z" />
-                              </label>
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">Mx ({FRAME3D_INPUT_UNITS.moment})</span>
-                                <Input value={load.mx} onChange={(event) => updateLoad(load.id, (current) => ({ ...(current as typeof load), mx: event.target.value }))} placeholder="Momento em torno de X" />
-                              </label>
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">My ({FRAME3D_INPUT_UNITS.moment})</span>
-                                <Input value={load.my} onChange={(event) => updateLoad(load.id, (current) => ({ ...(current as typeof load), my: event.target.value }))} placeholder="Momento em torno de Y" />
-                              </label>
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">Mz ({FRAME3D_INPUT_UNITS.moment})</span>
-                                <Input value={load.mz} onChange={(event) => updateLoad(load.id, (current) => ({ ...(current as typeof load), mz: event.target.value }))} placeholder="Momento em torno de Z" />
-                              </label>
-                            </div>
-                          </div>
-                          ))}
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="min-w-[980px] w-full table-fixed text-sm">
+                          <colgroup>
+                            <col className="w-[18%]" />
+                            <col className="w-[11%]" />
+                            <col className="w-[11%]" />
+                            <col className="w-[11%]" />
+                            <col className="w-[11%]" />
+                            <col className="w-[11%]" />
+                            <col className="w-[11%]" />
+                            <col className="w-[16%]" />
+                          </colgroup>
+                          <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-semibold">No</th>
+                              <th className="px-2 py-2 text-center font-semibold">Fx</th>
+                              <th className="px-2 py-2 text-center font-semibold">Fy</th>
+                              <th className="px-2 py-2 text-center font-semibold">Fz</th>
+                              <th className="px-2 py-2 text-center font-semibold">Mx</th>
+                              <th className="px-2 py-2 text-center font-semibold">My</th>
+                              <th className="px-2 py-2 text-center font-semibold">Mz</th>
+                              <th className="px-3 py-2 text-center font-semibold">Acoes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pagedNodalLoads.items.map((load) => (
+                              <tr key={load.id} className="border-t border-slate-200">
+                                <td className="px-3 py-2">
+                                  <select
+                                    className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm"
+                                    value={load.nodeId}
+                                    onChange={(event) =>
+                                      updateLoad(load.id, (current) => ({
+                                        ...(current as typeof load),
+                                        nodeId: event.target.value,
+                                      }))
+                                    }
+                                  >
+                                    <option value="">Selecione o no</option>
+                                    {nodeOptions.map((option) => (
+                                      <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                {(['fx', 'fy', 'fz', 'mx', 'my', 'mz'] as const).map((field) => (
+                                  <td key={field} className="px-2 py-2">
+                                    <div className="flex justify-center">
+                                      <Input
+                                        className="h-8 w-[88px]"
+                                        value={load[field]}
+                                        onChange={(event) =>
+                                          updateLoad(load.id, (current) => ({
+                                            ...(current as typeof load),
+                                            [field]: event.target.value,
+                                          }))
+                                        }
+                                        placeholder={field.toUpperCase()}
+                                      />
+                                    </div>
+                                  </td>
+                                ))}
+                                <td className="px-3 py-2">
+                                  <div className="flex justify-center">
+                                    <Button size="sm" variant="ghost" onClick={() => removeLoad(load.id)}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
+                      <TablePaginationControls
+                        label="Cargas nodais"
+                        itemCount={nodalLoads.length}
+                        page={safeNodalLoadPage}
+                        totalPages={totalNodalLoadPages}
+                        onPrevious={() => setNodalLoadPage(Math.max(1, safeNodalLoadPage - 1))}
+                        onNext={() => setNodalLoadPage(Math.min(totalNodalLoadPages, safeNodalLoadPage + 1))}
+                      />
                     </section>
 
                     <section className="space-y-3">
@@ -1726,48 +2303,79 @@ export default function PorticoEspacialPage() {
                         Cargas uniformes locais da barra: qy e qz ({FRAME3D_INPUT_UNITS.distributedLoad}) nos eixos locais y e z. Na convenção interna do solver, valores positivos atuam no sentido oposto aos eixos locais correspondentes.
                       </p>
 
-                      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(340px,420px))]">
-                        {loads
-                          .filter((load) => load.type === 'distributed')
-                          .map((load) => (
-                          <div key={load.id} className="w-full rounded-xl border border-slate-200 p-3">
-                            <div className="mb-2 flex items-center justify-between">
-                              <p className="text-sm font-medium text-slate-800">Carga distribuida</p>
-                              <Button size="sm" variant="ghost" onClick={() => removeLoad(load.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <label className="space-y-1 col-span-2">
-                                <span className="text-xs font-medium text-slate-700">Barra de aplicacao</span>
-                                <select
-                                  className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm"
-                                  value={load.elementId}
-                                  onChange={(event) =>
-                                    updateLoad(load.id, (current) => ({
-                                      ...(current as typeof load),
-                                      elementId: event.target.value,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Selecione a barra</option>
-                                  {elementOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">qy ({FRAME3D_INPUT_UNITS.distributedLoad})</span>
-                                <Input value={load.qy} onChange={(event) => updateLoad(load.id, (current) => ({ ...(current as typeof load), qy: event.target.value }))} placeholder="Distribuida no eixo local y" />
-                              </label>
-                              <label className="space-y-1">
-                                <span className="text-xs font-medium text-slate-700">qz ({FRAME3D_INPUT_UNITS.distributedLoad})</span>
-                                <Input value={load.qz} onChange={(event) => updateLoad(load.id, (current) => ({ ...(current as typeof load), qz: event.target.value }))} placeholder="Distribuida no eixo local z" />
-                              </label>
-                            </div>
-                          </div>
-                          ))}
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="min-w-[640px] w-full table-fixed text-sm">
+                          <colgroup>
+                            <col className="w-[34%]" />
+                            <col className="w-[20%]" />
+                            <col className="w-[20%]" />
+                            <col className="w-[26%]" />
+                          </colgroup>
+                          <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-semibold">Barra</th>
+                              <th className="px-2 py-2 text-center font-semibold">qy</th>
+                              <th className="px-2 py-2 text-center font-semibold">qz</th>
+                              <th className="px-3 py-2 text-center font-semibold">Acoes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pagedDistributedLoads.items.map((load) => (
+                              <tr key={load.id} className="border-t border-slate-200">
+                                <td className="px-3 py-2">
+                                  <select
+                                    className="h-9 w-full rounded-md border border-slate-200 px-2 text-sm"
+                                    value={load.elementId}
+                                    onChange={(event) =>
+                                      updateLoad(load.id, (current) => ({
+                                        ...(current as typeof load),
+                                        elementId: event.target.value,
+                                      }))
+                                    }
+                                  >
+                                    <option value="">Selecione a barra</option>
+                                    {elementOptions.map((option) => (
+                                      <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                {(['qy', 'qz'] as const).map((field) => (
+                                  <td key={field} className="px-2 py-2">
+                                    <div className="flex justify-center">
+                                      <Input
+                                        className="h-8 w-[96px]"
+                                        value={load[field]}
+                                        onChange={(event) =>
+                                          updateLoad(load.id, (current) => ({
+                                            ...(current as typeof load),
+                                            [field]: event.target.value,
+                                          }))
+                                        }
+                                        placeholder={field}
+                                      />
+                                    </div>
+                                  </td>
+                                ))}
+                                <td className="px-3 py-2">
+                                  <div className="flex justify-center">
+                                    <Button size="sm" variant="ghost" onClick={() => removeLoad(load.id)}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
+                      <TablePaginationControls
+                        label="Cargas distribuidas"
+                        itemCount={distributedLoads.length}
+                        page={safeDistributedLoadPage}
+                        totalPages={totalDistributedLoadPages}
+                        onPrevious={() => setDistributedLoadPage(Math.max(1, safeDistributedLoadPage - 1))}
+                        onNext={() => setDistributedLoadPage(Math.min(totalDistributedLoadPages, safeDistributedLoadPage + 1))}
+                      />
                     </section>
                       </>
                     ) : null}
@@ -1776,58 +2384,12 @@ export default function PorticoEspacialPage() {
               ) : null}
 
               {headerMode === 'visualizar' ? (
-              <main className="flex min-h-0 flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Tabs value={projection} onValueChange={(value) => setProjection(value as Frame3DProjectionView)}>
-                      <TabsList className="grid grid-cols-4">
-                        <TabsTrigger value="3d">3D</TabsTrigger>
-                        <TabsTrigger value="xy">XY</TabsTrigger>
-                        <TabsTrigger value="xz">XZ</TabsTrigger>
-                        <TabsTrigger value="yz">YZ</TabsTrigger>
-                      </TabsList>
-                    </Tabs>
-
-                    <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as Frame3DViewMode)}>
-                      <TabsList className="grid grid-cols-8">
-                        <TabsTrigger value="carregamentos">Carreg.</TabsTrigger>
-                        <TabsTrigger value="deformada">Deformada</TabsTrigger>
-                        <TabsTrigger value="N">N</TabsTrigger>
-                        <TabsTrigger value="Vy">Vy</TabsTrigger>
-                        <TabsTrigger value="Vz">Vz</TabsTrigger>
-                        <TabsTrigger value="T">T</TabsTrigger>
-                        <TabsTrigger value="My">My</TabsTrigger>
-                        <TabsTrigger value="Mz">Mz</TabsTrigger>
-                      </TabsList>
-                    </Tabs>
-                  </div>
-
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-                      Camera: {activeCameraProjection === 'perspective' ? 'Perspectiva' : 'Ortografica'}
-                    </span>
-                    <span className="text-slate-600">Escala resposta</span>
-                    <Input
-                      className="h-9 w-24"
-                      type="number"
-                      min={0.1}
-                      max={50}
-                      step={0.1}
-                      value={responseScale}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        if (!Number.isFinite(value)) return;
-                        setResponseScale(Math.max(0.1, Math.min(50, value)));
-                      }}
-                    />
-                  </div>
-                </div>
-
+              <main className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="min-h-0 flex-1">
-                  {viewerSnapshot ? (
+                  {canRenderCurrentView && activeViewerSnapshot ? (
                     <Frame3DStructureViewer
-                      model={viewerSnapshot.viewerModel}
-                      result={processedSnapshotIsCurrent ? viewerSnapshot.result : null}
+                      model={activeViewerSnapshot.viewerModel}
+                      result={processedSnapshotIsCurrent ? activeViewerSnapshot.result : null}
                       projection={projection}
                       cameraProjection={activeCameraProjection}
                       visualizationSettings={visualizationSettings}
@@ -1835,8 +2397,12 @@ export default function PorticoEspacialPage() {
                       responseScale={responseScale}
                       className="h-full"
                     />
+                  ) : activeViewerSnapshot ? (
+                    <div className="m-4 flex h-[calc(100%-2rem)] min-h-[420px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-600">
+                      Estrutura nao processada.
+                    </div>
                   ) : (
-                    <div className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-600">
+                    <div className="m-4 flex h-[calc(100%-2rem)] min-h-[420px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-600">
                       Revise os dados para habilitar a visualizacao.
                     </div>
                   )}
